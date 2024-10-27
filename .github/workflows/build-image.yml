@@ -51,14 +51,6 @@ jobs:
         with:
           fetch-depth: '0'
 
-      - name: Get current date
-        id: date
-        run: echo "date=$(date -u +'%Y%m%d')" >> $GITHUB_ENV
-
-      - name: Set nightly artifact name
-        id: set-nightly-artifact-name
-        run: echo "ARTIFACT_NAME=wlanpi-nightly-${{ steps.build-image.outputs.version }}~gha${{ env.date }}" >> $GITHUB_ENV
-
       - name: Build image
         id: build-image
         run: |
@@ -79,6 +71,14 @@ jobs:
         id: generate-checksum
         run: |
           cd deploy; for file in *.zip; do sha256sum --binary $file | sudo tee "${file}.sha256"; done; cd ../
+
+      - name: Get current date
+        id: date
+        run: echo "date=$(date -u +'%Y%m%d')" >> $GITHUB_ENV
+
+      - name: Set nightly artifact name
+        id: set-nightly-artifact-name
+        run: echo "ARTIFACT_NAME=wlanpi-nightly-${{ steps.build-image.outputs.version }}~gha${{ env.date }}" >> $GITHUB_ENV
 
       - name: Upload image
         uses: actions/upload-artifact@v3
