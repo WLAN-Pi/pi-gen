@@ -65,19 +65,19 @@ jobs:
         run: echo "ARTIFACT_NAME=wlanpi-nightly-${{ steps.build-image.outputs.version }}~gha${{ env.date }}" >> $GITHUB_ENV
 
       - name: Upload image
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: ${{ env.ARTIFACT_NAME }}
           path: deploy/*.zip
 
       - name: Upload zipped image checksum
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: ${{ env.ARTIFACT_NAME }}-sha256
           path: deploy/*.sha256
 
       - name: Upload image info
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: ${{ env.ARTIFACT_NAME }}-info
           path: deploy/*.info
@@ -97,7 +97,7 @@ jobs:
 
       - name: Upload logs
         if: always()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: ${{ env.ARTIFACT_NAME }}-buildlogs
           path: deploy/*.log
