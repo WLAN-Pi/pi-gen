@@ -83,15 +83,22 @@ cp "$ROOTFS_DIR/etc/rpi-issue" "$INFO_FILE"
 	dpkg -l --root "$ROOTFS_DIR"
 } >> "$INFO_FILE"
 
+echo "VERSION=${NEW_VERSION#v}" > "${ROOTFS_DIR}/etc/wlanpi-release"
+
+if grep -q "version=" "$GITHUB_OUTPUT"; then
+    echo "DEBUG: version was written to GITHUB_OUTPUT: $(cat "$GITHUB_OUTPUT")"
+else
+    echo "ERROR: Failed to write version to GITHUB_OUTPUT"
+fi
+
 # OLD method
 # new_version=$(source "${SCRIPT_DIR}/update_version.sh" "${VERSION_BUMP}")
 # echo "VERSION=${new_version#v}" > "${ROOTFS_DIR}/etc/wlanpi-release"
 # echo "::set-output name=version::${new_version}"  # set-output is deprecated
-
-echo "VERSION=${NEW_VERSION#v}" > "${ROOTFS_DIR}/etc/wlanpi-release"
-# echo "::set-output name=version::${NEW_VERSION}"
-echo "version=${NEW_VERSION}" >> $GITHUB_OUTPUT
 # https://github.blog/changelog/2022-10-11-github-actions-deprecating-save-state-and-set-output-commands/
+
+echo "version=${NEW_VERSION}" >> $GITHUB_OUTPUT
+echo "DEBUG: output version set as ${NEW_VERSION}"
 
 mkdir -p "${DEPLOY_DIR}"
 
