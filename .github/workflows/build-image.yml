@@ -54,10 +54,10 @@ jobs:
           fi
 
           sudo docker run --rm --privileged \
-            -e "GITHUB_OUTPUT=/github-output" \
             -v "$GITHUB_OUTPUT:/github-output" \
+            -e "GITHUB_OUTPUT=/github-output" \
             multiarch/qemu-user-static --reset -p yes
-          sudo ./build-docker.sh -v ${{ github.event.inputs.version-bump }} --github-output "$GITHUB_OUTPUT"
+          sudo ./build-docker.sh 
 
       - name: Check GITHUB_OUTPUT env file contents after to build
         run: |

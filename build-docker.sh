@@ -112,7 +112,8 @@ if [ "${CONTAINER_EXISTS}" != "" ]; then
 		-e "LAST_VERSION=${LAST_VERSION}" \
 		-e "LAST_VERSION_HASH=${LAST_VERSION_HASH}" \
 		-e "COMMITS_FROM_LAST=${COMMITS_FROM_LAST}" \
-		-e "GITHUB_OUTPUT=${GITHUB_OUTPUT}" \
+		-e "GITHUB_OUTPUT=/github-output" \
+		-v "$GITHUB_OUTPUT:/github-output" \
 		--volumes-from="${CONTAINER_NAME}" --name "${CONTAINER_NAME}_cont" \
 		pi-gen \
 		bash -e -o pipefail -c "dpkg-reconfigure qemu-user-static &&
@@ -134,7 +135,8 @@ else
 		-e "LAST_VERSION=${LAST_VERSION}" \
 		-e "LAST_VERSION_HASH=${LAST_VERSION_HASH}" \
 		-e "COMMITS_FROM_LAST=${COMMITS_FROM_LAST}" \
-		-e "GITHUB_OUTPUT=${GITHUB_OUTPUT}" \
+		-e "GITHUB_OUTPUT=/github-output" \
+		-v "$GITHUB_OUTPUT:/github-output" \
 		pi-gen \
 		bash -e -o pipefail -c "dpkg-reconfigure qemu-user-static &&
 	# binfmt_misc is sometimes not mounted with debian bullseye image
