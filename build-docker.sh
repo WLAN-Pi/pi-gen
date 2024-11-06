@@ -56,6 +56,13 @@ if [ -z "${IMG_NAME}" ]; then
 exit 1
 fi
 
+# Check for GITHUB_OUTPUT and provide fallback if running outside GitHub Actions
+if [ -z "${GITHUB_OUTPUT:-}" ]; then
+    echo "Warning: GITHUB_OUTPUT not set. Defaulting to /tmp/github_output for local runs."
+    GITHUB_OUTPUT="/tmp/github_output"
+    touch "$GITHUB_OUTPUT"
+fi
+
 # Ensure the Git Hash is recorded before entering the docker container
 GIT_HASH=${GIT_HASH:-"$(git rev-parse HEAD)"}
 LAST_VERSION="$(git describe --tags --abbrev=0 --match="v[0-9].[0-9].[0-9]*")"
@@ -101,6 +108,7 @@ if [ "${CONTAINER_EXISTS}" != "" ]; then
 		-e "LAST_VERSION=${LAST_VERSION}" \
 		-e "LAST_VERSION_HASH=${LAST_VERSION_HASH}" \
 		-e "COMMITS_FROM_LAST=${COMMITS_FROM_LAST}" \
+		-e "GITHUB_OUTPUT=${GITHUB_OUTPUT}" \
 		--volumes-from="${CONTAINER_NAME}" --name "${CONTAINER_NAME}_cont" \
 		pi-gen \
 		bash -e -o pipefail -c "dpkg-reconfigure qemu-user-static &&
@@ -122,6 +130,7 @@ else
 		-e "LAST_VERSION=${LAST_VERSION}" \
 		-e "LAST_VERSION_HASH=${LAST_VERSION_HASH}" \
 		-e "COMMITS_FROM_LAST=${COMMITS_FROM_LAST}" \
+		-e "GITHUB_OUTPUT=${GITHUB_OUTPUT}" \
 		pi-gen \
 		bash -e -o pipefail -c "dpkg-reconfigure qemu-user-static &&
 	# binfmt_misc is sometimes not mounted with debian bullseye image

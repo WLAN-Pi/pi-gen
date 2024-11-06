@@ -83,14 +83,14 @@ cp "$ROOTFS_DIR/etc/rpi-issue" "$INFO_FILE"
 	dpkg -l --root "$ROOTFS_DIR"
 } >> "$INFO_FILE"
 
+# OLD method
 # new_version=$(source "${SCRIPT_DIR}/update_version.sh" "${VERSION_BUMP}")
 # echo "VERSION=${new_version#v}" > "${ROOTFS_DIR}/etc/wlanpi-release"
-# echo "::set-output name=version::${new_version}"
+# echo "::set-output name=version::${new_version}"  # set-output is deprecated
 
 echo "VERSION=${NEW_VERSION#v}" > "${ROOTFS_DIR}/etc/wlanpi-release"
-echo "::set-output name=version::${NEW_VERSION}"
-# echo "version=${NEW_VERSION}" >> $GITHUB_OUTPUT
-# ./01-run.sh: line 92: $GITHUB_OUTPUT: ambiguous redirect
+# echo "::set-output name=version::${NEW_VERSION}"
+echo "version=${NEW_VERSION}" >> $GITHUB_OUTPUT
 # https://github.blog/changelog/2022-10-11-github-actions-deprecating-save-state-and-set-output-commands/
 
 mkdir -p "${DEPLOY_DIR}"
