@@ -56,16 +56,16 @@ if [ -z "${IMG_NAME}" ]; then
 exit 1
 fi
 
-# Check for GITHUB_OUTPUT and provide fallback if running outside GitHub Actions
-if [ -z "${GITHUB_OUTPUT:-}" ]; then
-    echo "Warning: GITHUB_OUTPUT not set. Defaulting to /tmp/github_output for local runs."
-    GITHUB_OUTPUT="/tmp/github_output"
-    touch "$GITHUB_OUTPUT"
-	exit 1
-else
-    echo "Debug: GITHUB_OUTPUT is set to $GITHUB_OUTPUT"
-	exit 2
-fi
+# # Check for GITHUB_OUTPUT and provide fallback if running outside GitHub Actions
+# if [ -z "${GITHUB_OUTPUT:-}" ]; then
+#     echo "Warning: GITHUB_OUTPUT not set. Defaulting to /tmp/github_output for local runs."
+#     GITHUB_OUTPUT="/tmp/github_output"
+#     touch "$GITHUB_OUTPUT"
+# 	exit 1
+# else
+#     echo "Debug: GITHUB_OUTPUT is set to $GITHUB_OUTPUT"
+# 	exit 2
+# fi
 
 # Ensure the Git Hash is recorded before entering the docker container
 GIT_HASH=${GIT_HASH:-"$(git rev-parse HEAD)"}
@@ -149,8 +149,10 @@ fi
 
 if grep -q "version=" "$GITHUB_OUTPUT"; then
     echo "Debug: version was written to GITHUB_OUTPUT: $(cat "$GITHUB_OUTPUT")"
+	exit 1
 else
     echo "Error: Failed to find version in GITHUB_OUTPUT"
+	exit 2
 fi
 
 echo "copying results from deploy/"
