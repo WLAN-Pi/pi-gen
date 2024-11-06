@@ -48,7 +48,9 @@ jobs:
             exit 0
           fi
 
-          sudo docker run --rm --privileged --env GITHUB_OUTPUT="${GITHUB_OUTPUT}" multiarch/qemu-user-static --reset -p yes
+          sudo docker run --rm --privileged \
+            --env GITHUB_OUTPUT="${GITHUB_OUTPUT}" \
+            multiarch/qemu-user-static --reset -p yes
           sudo ./build-docker.sh -v ${{ github.event.inputs.version-bump }}
 
       - name: Check GITHUB_OUTPUT contents
@@ -66,7 +68,7 @@ jobs:
 
       - name: Set nightly artifact name
         id: set-nightly-artifact-name
-        run: echo "ARTIFACT_NAME=wlanpi-nightly-${{ env.version }}~gha${{ env.date }}" >> $GITHUB_ENV
+        run: echo "ARTIFACT_NAME=wlanpi-nightly-${{ steps.build-image.outputs.version }}~gha${{ env.date }}" >> $GITHUB_ENV
 
       - name: Upload image
         uses: actions/upload-artifact@v4
