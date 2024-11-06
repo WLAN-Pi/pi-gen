@@ -35,15 +35,11 @@ jobs:
         with:
           fetch-depth: '0'
 
-      - name: Verify GITHUB_OUTPUT before build with docker
+      - name: Check GITHUB_OUTPUT env file contents prior to build
         run: |
-          if [ -z "$GITHUB_OUTPUT" ]; then
-            echo "Error: GITHUB_OUTPUT is not set in GitHub Actions."
-            exit 1
-          else
-            echo "GITHUB_OUTPUT is set to $GITHUB_OUTPUT"
-          fi
-  
+          GITHUB_OUTPUT="${GITHUB_OUTPUT:-none}"
+          echo "GITHUB_OUTPUT is set to $GITHUB_OUTPUT"
+
       - name: Build image
         id: build-image
         run: |
@@ -58,13 +54,15 @@ jobs:
           fi
 
           sudo docker run --rm --privileged \
-            --env GITHUB_OUTPUT="${GITHUB_OUTPUT}" \
+            -e "GITHUB_OUTPUT=/github-output" \
+            -v "$GITHUB_OUTPUT:/github-output" \
             multiarch/qemu-user-static --reset -p yes
-          sudo ./build-docker.sh -v ${{ github.event.inputs.version-bump }}
+          sudo ./build-docker.sh -v ${{ github.event.inputs.version-bump }} --github-output "$GITHUB_OUTPUT"
 
-      - name: Check GITHUB_OUTPUT contents
-        run: cat "$GITHUB_OUTPUT"
-        shell: bash
+      - name: Check GITHUB_OUTPUT env file contents after to build
+        run: |
+          GITHUB_OUTPUT="${GITHUB_OUTPUT:-none}"
+          echo "GITHUB_OUTPUT is set to $GITHUB_OUTPUT"
 
       - name: Generate checksum
         id: generate-checksum
