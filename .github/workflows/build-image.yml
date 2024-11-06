@@ -35,6 +35,15 @@ jobs:
         with:
           fetch-depth: '0'
 
+      - name: Verify GITHUB_OUTPUT before build with docker
+        run: |
+          if [ -z "$GITHUB_OUTPUT" ]; then
+            echo "Error: GITHUB_OUTPUT is not set in GitHub Actions."
+            exit 1
+          else
+            echo "GITHUB_OUTPUT is set to $GITHUB_OUTPUT"
+          fi
+  
       - name: Build image
         id: build-image
         run: |
