@@ -27,10 +27,9 @@ jobs:
             /bin/sh -c "echo 'thing=\"some thing\"' >> /output.env" \
             /bin/sh -c "echo 'test=\"this\"' >> /output.env"
         
-      - name: Load output as environment variable
+      - name: Load and use output as environment variable
         run: |
           source output.env
-          echo "my_output is $my_output"
-
-      - name: Use the output
-        run: echo "$my_output"
+          echo "hello is $hello"
+          echo "thing is $test"
+          echo "test is $my_output"
