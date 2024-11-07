@@ -13,12 +13,12 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Prepare output file with write permissions
+      - name: Prepare output file
         run: |
           touch output.env
         
-      - name: Run Docker container
-        id: run-docker-container
+      - name: Run Alpine docker container
+        id: run-docker
         run: |
           docker run --rm \
             -v ${{ github.workspace }}/output.env:/output.env \
