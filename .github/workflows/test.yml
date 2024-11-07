@@ -11,14 +11,15 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Run Docker container
+        id: run-docker-container
         run: |
           docker run --rm \
             -e GITHUB_OUTPUT=/github/workspace/output.txt \
             alpine \
-            /bin/bash -c "echo 'my_output=hello world' >> $GITHUB_OUTPUT"
+            /bin/sh -c "echo 'my_output=hello world' >> $GITHUB_OUTPUT"
 
       - name: Use the output
         run: echo "${{ steps.run-docker-container.outputs.my_output }}"
