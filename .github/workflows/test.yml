@@ -17,7 +17,7 @@ jobs:
         run: |
           docker run --rm \
             -e GITHUB_OUTPUT=/github/workspace/output.txt \
-            my-image \
+            alpine \
             /bin/bash -c "echo 'my_output=hello world' >> $GITHUB_OUTPUT"
 
       - name: Use the output
