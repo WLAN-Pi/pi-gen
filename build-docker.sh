@@ -89,7 +89,7 @@ case "$(uname -m)" in
 esac
 ${DOCKER} build --build-arg BASE_IMAGE=${BASE_IMAGE} -t pi-gen "${DIR}"
 
-GITHUB_OUTPUT="${GITHUB_OUTPUT:-/github-output}"
+GITHUB_OUTPUT="${GITHUB_OUTPUT:-/tmp/github-output.txt}"
 if [ ! -d "$GITHUB_OUTPUT" ]; then
     echo "Creating directory for GITHUB_OUTPUT at $GITHUB_OUTPUT"
     mkdir -p "$GITHUB_OUTPUT"
@@ -108,8 +108,8 @@ if [ "${CONTAINER_EXISTS}" != "" ]; then
 		-e "LAST_VERSION=${LAST_VERSION}" \
 		-e "LAST_VERSION_HASH=${LAST_VERSION_HASH}" \
 		-e "COMMITS_FROM_LAST=${COMMITS_FROM_LAST}" \
-		-e "GITHUB_OUTPUT=/github-output" \
-		-v "$GITHUB_OUTPUT:/github-output" \
+		-v "$GITHUB_OUTPUT:/tmp/github-output.txt" \
+		-e "GITHUB_OUTPUT=/tmp/github-output.txt" \
 		--volumes-from="${CONTAINER_NAME}" --name "${CONTAINER_NAME}_cont" \
 		pi-gen \
 		bash -e -o pipefail -c "dpkg-reconfigure qemu-user-static &&
@@ -131,8 +131,8 @@ else
 		-e "LAST_VERSION=${LAST_VERSION}" \
 		-e "LAST_VERSION_HASH=${LAST_VERSION_HASH}" \
 		-e "COMMITS_FROM_LAST=${COMMITS_FROM_LAST}" \
-		-e "GITHUB_OUTPUT=/github-output" \
-		-v "$GITHUB_OUTPUT:/github-output" \
+		-v "$GITHUB_OUTPUT:/tmp/github-output.txt" \
+		-e "GITHUB_OUTPUT=/tmp/github-output.txt" \
 		pi-gen \
 		bash -e -o pipefail -c "dpkg-reconfigure qemu-user-static &&
 	# binfmt_misc is sometimes not mounted with debian bullseye image
@@ -145,10 +145,8 @@ fi
 
 if grep -q "version=" "$GITHUB_OUTPUT"; then
     echo "Debug: version was written to GITHUB_OUTPUT: $(cat "$GITHUB_OUTPUT")"
-	exit 1
 else
     echo "Error: Failed to find version in GITHUB_OUTPUT"
-	exit 2
 fi
 
 echo "copying results from deploy/"
