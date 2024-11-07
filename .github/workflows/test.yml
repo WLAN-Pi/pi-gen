@@ -13,6 +13,9 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Prepare output file
+        run: echo "" > output.env
+        
       - name: Run Docker container
         id: run-docker-container
         run: |
