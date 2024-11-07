@@ -23,9 +23,9 @@ jobs:
           docker run --rm \
             -v ${{ github.workspace }}/output.env:/output.env \
             alpine \
-            /bin/sh -c "echo 'my_output=\"hello world\"' >> /output.env" \
-            /bin/sh -c "echo 'my_output=\"some thing\"' >> /output.env" \
-            /bin/sh -c "echo 'my_output=\"test\"' >> /output.env"
+            /bin/sh -c "echo 'hello=\"hello world\"' >> /output.env" \
+            /bin/sh -c "echo 'thing=\"some thing\"' >> /output.env" \
+            /bin/sh -c "echo 'test=\"this\"' >> /output.env"
         
       - name: Load output as environment variable
         run: |
