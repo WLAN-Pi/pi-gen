@@ -92,13 +92,6 @@ case "$(uname -m)" in
 esac
 ${DOCKER} build --build-arg BASE_IMAGE=${BASE_IMAGE} -t pi-gen "${DIR}"
 
-GITHUB_OUTPUT="${GITHUB_OUTPUT:-/tmp/github-output.txt}"
-if [ ! -d "$GITHUB_OUTPUT" ]; then
-    echo "Creating directory for GITHUB_OUTPUT at $GITHUB_OUTPUT"
-    mkdir -p "$GITHUB_OUTPUT"
-fi
-echo "Debug: GITHUB_OUTPUT is set to $GITHUB_OUTPUT"
-
 if [ "${CONTAINER_EXISTS}" != "" ]; then
 	trap 'echo "got CTRL+C... please wait 5s" && ${DOCKER} stop -t 5 ${CONTAINER_NAME}_cont' SIGINT SIGTERM
 	time ${DOCKER} run --rm --privileged \
