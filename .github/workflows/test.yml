@@ -1,4 +1,4 @@
-name: Docker Example
+name: Get Output from Docker
 
 on:
   workflow_dispatch:
@@ -23,6 +23,8 @@ jobs:
             -v ${{ github.workspace }}/output.env:/output.env \
             alpine \
             /bin/sh -c "echo 'my_output=\"hello world\"' >> /output.env"
+            /bin/sh -c "echo 'my_output=\"some thing\"' >> /output.env"
+            /bin/sh -c "echo 'my_output=\"test\"' >> /output.env"
         
       - name: Load output as environment variable
         run: |
