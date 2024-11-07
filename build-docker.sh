@@ -26,6 +26,9 @@ do
 		c)
 			CONFIG_FILE="${OPTARG}"
 			;;
+		v)
+			VOLUME="${OPTARG}"
+			;;
 		*)
 			;;
 	esac
@@ -108,8 +111,7 @@ if [ "${CONTAINER_EXISTS}" != "" ]; then
 		-e "LAST_VERSION=${LAST_VERSION}" \
 		-e "LAST_VERSION_HASH=${LAST_VERSION_HASH}" \
 		-e "COMMITS_FROM_LAST=${COMMITS_FROM_LAST}" \
-		-v "$GITHUB_OUTPUT:/tmp/github-output.txt" \
-		-e "GITHUB_OUTPUT=/tmp/github-output.txt" \
+		-v $VOLUME \
 		--volumes-from="${CONTAINER_NAME}" --name "${CONTAINER_NAME}_cont" \
 		pi-gen \
 		bash -e -o pipefail -c "dpkg-reconfigure qemu-user-static &&
@@ -131,8 +133,7 @@ else
 		-e "LAST_VERSION=${LAST_VERSION}" \
 		-e "LAST_VERSION_HASH=${LAST_VERSION_HASH}" \
 		-e "COMMITS_FROM_LAST=${COMMITS_FROM_LAST}" \
-		-v "$GITHUB_OUTPUT:/tmp/github-output.txt" \
-		-e "GITHUB_OUTPUT=/tmp/github-output.txt" \
+		-v $VOLUME \
 		pi-gen \
 		bash -e -o pipefail -c "dpkg-reconfigure qemu-user-static &&
 	# binfmt_misc is sometimes not mounted with debian bullseye image
@@ -143,10 +144,10 @@ else
 	wait "$!"
 fi
 
-if grep -q "version=" "$GITHUB_OUTPUT"; then
-    echo "Debug: version was written to GITHUB_OUTPUT: $(cat "$GITHUB_OUTPUT")"
+if grep -q "version=" "$VOLUME"; then
+    echo "Debug: version was written to VOLUME: $(cat "$VOLUME")"
 else
-    echo "Error: Failed to find version in GITHUB_OUTPUT"
+    echo "Error: Failed to find version in VOLUME"
 fi
 
 echo "copying results from deploy/"

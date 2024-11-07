@@ -35,11 +35,10 @@ jobs:
         with:
           fetch-depth: '0'
 
-      - name: Check GITHUB_OUTPUT env file contents prior to build
+      - name: Prepare output file
         run: |
-          GITHUB_OUTPUT="${GITHUB_OUTPUT:-none}"
-          echo "GITHUB_OUTPUT is set to $GITHUB_OUTPUT"
-
+          touch output.env
+          
       - name: Build image
         id: build-image
         run: |
@@ -54,14 +53,16 @@ jobs:
           fi
 
           sudo docker run --rm --privileged \
+            -v ${{ github.workspace }}/output.env:/output.env \
             multiarch/qemu-user-static --reset -p yes
 
-          sudo ./build-docker.sh 
+          sudo ./build-docker.sh -v ${{ github.workspace }}/output.env:/output.env
 
-      - name: Check GITHUB_OUTPUT env file contents after to build
+      - name: Load and use output as environment variable
         run: |
-          GITHUB_OUTPUT="${GITHUB_OUTPUT:-none}"
-          echo "GITHUB_OUTPUT is set to $GITHUB_OUTPUT"
+          source output.env
+          echo "version from output.env is $version"
+          echo "version=$version" >> $GITHUB_ENV
 
       - name: Generate checksum
         id: generate-checksum
@@ -74,7 +75,7 @@ jobs:
 
       - name: Set nightly artifact name
         id: set-nightly-artifact-name
-        run: echo "ARTIFACT_NAME=wlanpi-nightly-${{ steps.build-image.outputs.version }}~gha${{ env.date }}" >> $GITHUB_ENV
+        run: echo "ARTIFACT_NAME=wlanpi-nightly-${{ env.version }}~gha${{ env.date }}" >> $GITHUB_ENV
 
       - name: Upload image
         uses: actions/upload-artifact@v4
@@ -99,7 +100,7 @@ jobs:
         uses: "marvinpinto/action-automatic-releases@latest"
         with:
           repo_token: "${{ secrets.GITHUB_TOKEN }}"
-          automatic_release_tag: ${{ steps.build-image.outputs.version }}
+          automatic_release_tag: ${{ env.version }}
           prerelease: true
           files: |
             deploy/*.zip
