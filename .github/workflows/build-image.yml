@@ -35,7 +35,7 @@ jobs:
         with:
           fetch-depth: '0'
 
-      - name: Prepare output file
+      - name: Prepare docker output
         run: |
           touch output.env
           
@@ -53,16 +53,17 @@ jobs:
           fi
 
           sudo docker run --rm --privileged \
-            -v ${{ github.workspace }}/output.env:/output.env \
             multiarch/qemu-user-static --reset -p yes
 
           sudo ./build-docker.sh -v ${{ github.workspace }}/output.env:/output.env
 
-      - name: Load and use output as environment variable
+      - name: Load and export docker output
         run: |
-          source output.env
-          echo "version from output.env is $version"
-          echo "version=$version" >> $GITHUB_ENV
+          while IFS='=' read -r key value; do
+            echo "Processing $key with value $value"
+            echo "$key=$value" >> $GITHUB_ENV
+          done < output.env
+          echo "All variables from output.env have been added to GITHUB_ENV."
 
       - name: Generate checksum
         id: generate-checksum
