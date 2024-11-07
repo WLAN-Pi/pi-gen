@@ -19,7 +19,10 @@ jobs:
           docker run --rm \
             -e GITHUB_OUTPUT=/github/workspace/output.txt \
             alpine \
-            /bin/sh -c "echo 'my_output=hello world' >> $GITHUB_OUTPUT"
+            /bin/sh -c "echo 'my_output=hello world' >> $GITHUB_ENV"
+        
+      - name: Load output as environment variable
+        run: source /github/workspace/output.env
 
       - name: Use the output
-        run: echo "${{ steps.run-docker-container.outputs.my_output }}"
+        run: echo "$my_output"
