@@ -56,17 +56,6 @@ if [ -z "${IMG_NAME}" ]; then
 exit 1
 fi
 
-# # Check for GITHUB_OUTPUT and provide fallback if running outside GitHub Actions
-# if [ -z "${GITHUB_OUTPUT:-}" ]; then
-#     echo "Warning: GITHUB_OUTPUT not set. Defaulting to /tmp/github_output for local runs."
-#     GITHUB_OUTPUT="/tmp/github_output"
-#     touch "$GITHUB_OUTPUT"
-# 	exit 1
-# else
-#     echo "Debug: GITHUB_OUTPUT is set to $GITHUB_OUTPUT"
-# 	exit 2
-# fi
-
 # Ensure the Git Hash is recorded before entering the docker container
 GIT_HASH=${GIT_HASH:-"$(git rev-parse HEAD)"}
 LAST_VERSION="$(git describe --tags --abbrev=0 --match="v[0-9].[0-9].[0-9]*")"
@@ -99,6 +88,13 @@ case "$(uname -m)" in
     ;;
 esac
 ${DOCKER} build --build-arg BASE_IMAGE=${BASE_IMAGE} -t pi-gen "${DIR}"
+
+GITHUB_OUTPUT="${GITHUB_OUTPUT:-/github-output}"
+if [ ! -d "$GITHUB_OUTPUT" ]; then
+    echo "Creating directory for GITHUB_OUTPUT at $GITHUB_OUTPUT"
+    mkdir -p "$GITHUB_OUTPUT"
+fi
+echo "Debug: GITHUB_OUTPUT is set to $GITHUB_OUTPUT"
 
 if [ "${CONTAINER_EXISTS}" != "" ]; then
 	trap 'echo "got CTRL+C... please wait 5s" && ${DOCKER} stop -t 5 ${CONTAINER_NAME}_cont' SIGINT SIGTERM
