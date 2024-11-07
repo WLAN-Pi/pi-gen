@@ -31,5 +31,5 @@ jobs:
         run: |
           source output.env
           echo "hello is $hello"
-          echo "thing is $test"
-          echo "test is $my_output"
+          echo "thing is $thing"
+          echo "test is $test"
