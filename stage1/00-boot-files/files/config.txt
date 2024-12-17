@@ -1,49 +1,17 @@
-# For more options and information see
-# http://rpf.io/configtxt
-# Some settings may impact device functionality. See link above for details
-
 [cm4]
-# Enable host mode on the 2711 built-in XHCI USB controller.
-# This line should be removed if the legacy DWC2 controller is required
-# (e.g. for USB device mode) or if USB support is not required.
-#otg_mode=1
-
-# Enable WLAN Pi Go Discovery and Go model detection
+#otg_mode=0
 dtoverlay=uart0
 dtoverlay=uart2
 dtoverlay=uart3
-
-# Enable OTG
 dtoverlay=dwc2,dr_mode=otg
-
-# Enable serial console
-#enable_uart=1
-
-# Reduce GPU memory
 gpu_mem=16
-
-# Enable Dynamic Voltage and Frequency Scaling
 dvfs=1
-
-# Disable CM4's Wi-Fi and BT radio if they are present
 dtoverlay=disable-wifi
 dtoverlay=disable-bt
 
 [all]
-# Enable i2c - required for EEPROM on M4+
 dtparam=i2c_arm=on
-
-# Enable spi - required for OLED Display
-dtparam=spi=on
-
-# Run as fast as firmware / board allows
 arm_boost=1
-
-# heartbeat LED
 dtparam=act_led_trigger=heartbeat
-
-# Switch to kernel 64 bits
 arm_64bit=1
-
-# Boot using customized kernel
 kernel=kernel8-wp.img

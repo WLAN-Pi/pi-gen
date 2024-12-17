@@ -2,7 +2,7 @@
 wlanpi-common
 wlanpi-profiler
 wlanpi-webui
-wlanpi-kernel
+#wlanpi-kernel
 wlanpi-wipry
 wlanpi-misc-firmware
 wlanpi-grafana
