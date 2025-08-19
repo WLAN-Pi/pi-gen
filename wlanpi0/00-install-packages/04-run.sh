@@ -12,8 +12,8 @@ on_chroot <<CHEOF
  	# curl -s https://packagecloud.io/install/repositories/wlanpi/dev/script.deb.sh | bash
 
 	# Add Bullseye Backports repository
-	# echo 'deb http://deb.debian.org/debian bullseye-backports main' | tee /etc/apt/sources.list.d/bullseye-backports.list
-	# sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 648ACFD622F3D138
+	echo 'deb http://archive.debian.org/debian bullseye-backports main' | tee /etc/apt/sources.list.d/bullseye-backports.list
+	sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 648ACFD622F3D138
 
 	# Add Grafana repository
 	if [ ! -f /etc/apt/sources.list.d/grafana.list ]; then
