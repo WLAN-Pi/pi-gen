@@ -45,43 +45,31 @@ jobs:
 
       - name: Aggressive cleanup
         run: |
+          echo "Before cleanup ..."
+
           df -h
-          
-          # Remove Java (JDKs)
+
+          echo "Running cleanup ..."
+
           sudo rm -rf /usr/lib/jvm
-
-          # Remove .NET SDKs
           sudo rm -rf /usr/share/dotnet
-
-          # Remove Swift toolchain
           sudo rm -rf /usr/share/swift
-
-          # Remove Haskell (GHC)
           sudo rm -rf /usr/local/.ghcup
-
-          # Remove Julia
           sudo rm -rf /usr/local/julia*
-
-          # Remove Android SDKs
           sudo rm -rf /usr/local/lib/android
-
-          # Remove Chromium (optional if not using for browser tests)
           sudo rm -rf /usr/local/share/chromium
-
-          # Remove Microsoft/Edge and Google Chrome builds
           sudo rm -rf /opt/microsoft /opt/google
-
-          # Remove Azure CLI
           sudo rm -rf /opt/az
-
-          # Remove PowerShell
           sudo rm -rf /usr/local/share/powershell
-
-          # Remove CodeQL and other toolcaches
           sudo rm -rf /opt/hostedtoolcache
 
+          echo "Running docker system prune ..."
           docker system prune -af || true
+
+          echo "Running docker builder prune ..."
           docker builder prune -af || true
+
+          echo "Cleanup done ... Checking space again ..."
           df -h
           
       - name: Build image
