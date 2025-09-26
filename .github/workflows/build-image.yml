@@ -63,11 +63,11 @@ jobs:
           sudo rm -rf /usr/local/share/powershell
           sudo rm -rf /opt/hostedtoolcache
 
-          echo "Running docker system prune ..."
-          docker system prune -af || true
+          # echo "Running docker system prune ..."
+          # docker system prune -af || true
 
-          echo "Running docker builder prune ..."
-          docker builder prune -af || true
+          # echo "Running docker builder prune ..."
+          # docker builder prune -af || true
 
           echo "Cleanup done ... Checking space again ..."
           df -h
