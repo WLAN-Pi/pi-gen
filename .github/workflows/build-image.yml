@@ -43,6 +43,35 @@ jobs:
         run: |
           touch output.env
 
+      - name: Aggressive cleanup
+        run: |
+          echo "Before cleanup ..."
+
+          df -h
+
+          echo "Running cleanup ..."
+
+          sudo rm -rf /usr/lib/jvm
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/share/swift
+          sudo rm -rf /usr/local/.ghcup
+          sudo rm -rf /usr/local/julia*
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /usr/local/share/chromium
+          sudo rm -rf /opt/microsoft /opt/google
+          sudo rm -rf /opt/az
+          sudo rm -rf /usr/local/share/powershell
+          sudo rm -rf /opt/hostedtoolcache
+
+          echo "Running docker system prune ..."
+          docker system prune -af || true
+
+          echo "Running docker builder prune ..."
+          docker builder prune -af || true
+
+          echo "Cleanup done ... Checking space again ..."
+          df -h
+          
       - name: Build image
         id: build-image
         env:
