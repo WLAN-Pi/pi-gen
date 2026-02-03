@@ -20,7 +20,7 @@ update_version() {
     setup_version
 
     echo "[update_version.sh] Getting last version"
-    LAST_VERSION=${LAST_VERSION:-"$(git describe --tags --abbrev=0 --match="v[0-9].[0-9].[0-9]*")"}
+    LAST_VERSION=${LAST_VERSION:-"$(git tag -l 'v[0-9].[0-9].[0-9]*' | sort -V | tail -n1)"}
     LAST_VERSION_HASH=${LAST_VERSION_HASH:-"$(git rev-parse "${LAST_VERSION}")"}$
     echo "[update_version.sh] LAST_VERSION=${LAST_VERSION}"
 
