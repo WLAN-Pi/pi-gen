@@ -202,7 +202,7 @@ fi
 
 export SCRIPT_DIR="${BASE_DIR}/scripts"
 
-export LAST_VERSION=${LAST_VERSION:-"$(git tag -l 'v[0-9].[0-9].[0-9]*' | sort -V | tail -n1)"}
+export LAST_VERSION=${LAST_VERSION:-"$(git tag -l 'v[0-9]*[.][0-9]*[.][0-9]*' | sort -V | tail -n1)"}
 export LAST_VERSION_HASH=${LAST_VERSION_HASH:-"$(git rev-parse "${LAST_VERSION}")"}
 export GIT_HASH=${GIT_HASH:-"$(git rev-parse HEAD)"}
 export COMMITS_FROM_LAST=${COMMITS_FROM_LAST:-"$(git log --oneline "${LAST_VERSION}"..${GIT_HASH})"}
