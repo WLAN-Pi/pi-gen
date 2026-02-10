@@ -61,7 +61,7 @@ fi
 
 # Ensure the Git Hash is recorded before entering the docker container
 GIT_HASH=${GIT_HASH:-"$(git rev-parse HEAD)"}
-LAST_VERSION="$(git describe --tags --abbrev=0 --match="v[0-9].[0-9].[0-9]*")"
+LAST_VERSION="$(git tag -l 'v[0-9]*[.][0-9]*[.][0-9]*' | sort -V | tail -n1)"
 LAST_VERSION_HASH="$(git rev-parse "${LAST_VERSION}")"
 COMMITS_FROM_LAST="$(git log --oneline "${LAST_VERSION}"..${GIT_HASH})"
 
