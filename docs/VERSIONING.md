@@ -53,6 +53,15 @@ The image records the version without the codename in `/etc/wlanpi-release`:
 VERSION=26.08
 ```
 
+`scripts/common:update_issue` also writes a version string to
+`/etc/rpi-issue`, which becomes the `Version` field in the release `.info`
+file. Release candidates write the base version `YY.MM`, stripping the
+`-rc.sequence` and codename. Dev, final, and point builds write the full
+`YY.MM[-type.sequence]-CODENAME`.
+
+- `26.10-rc.1-Cortado` writes `Version 26.10`.
+- `26.10-Cortado` writes `Version 26.10-Cortado`.
+
 ## Related
 
 - [CI.md](CI.md): build pipeline and input reference.

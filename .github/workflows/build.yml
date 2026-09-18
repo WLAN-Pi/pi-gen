@@ -880,6 +880,7 @@ jobs:
       - name: Create GitHub pre-release
         run: |
           gh release create ${{ env.git_tag }} \
+            --target ${{ github.sha }} \
             --prerelease \
             --title "v${{ needs.build-prep.outputs.full_version }} ${{ env.BUILD_TYPE_LABEL }}" \
             --notes-file ./release-notes/release-notes.log \

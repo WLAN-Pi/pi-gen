@@ -113,7 +113,7 @@ TEMP_DIR=$(mktemp -d)
 trap 'rm -rf "$TEMP_DIR"' EXIT
 
 extract_packages() {
-    grep -A 9999 "^Packages:" "$1" | grep "^ii " | awk '{print $2 "=" $3}'
+    grep -A 9999 "^Packages:" "$1" | grep -E "^(ii|hi) " | awk '{print $2 "=" $3}'
 }
 
 download_release_info_files() {
