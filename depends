@@ -6,6 +6,7 @@ debootstrap
 zerofree
 zip
 mkdosfs:dosfstools
+mke2fs:e2fsprogs
 capsh:libcap2-bin
 bsdtar:libarchive-tools
 grep
@@ -17,6 +18,6 @@ file
 git
 lsmod:kmod
 bc
-qemu-nbd:qemu-utils
-kpartx
 gpg
+pigz
+arch-test

@@ -1,0 +1,202 @@
+#!/bin/bash
+#
+# boot-info
+# A/B partition boot debug script
+# This script provides detailed information about the current boot state
+#
+# Version: v0.2
+# Author: Josh Schmelzle
+# License: BSD-3
+
+if [ "$(id -u)" -ne 0 ]; then
+    echo "Error: need elevated permissions ... run as root (sudo) ..."
+    exit 1
+fi
+
+echo_warning() {
+    echo -e "\e[1;31mWARNING: $1\e[0m"
+}
+
+echo_error() {
+    echo -e "\e[1;31mERROR: $1\e[0m"
+    exit 1
+}
+
+echo_status() {
+    echo -e "\e[1;34m>>> $1\e[0m"
+}
+
+echo_debug() {
+    echo -e "\e[1;36mDEBUG: $1\e[0m"
+}
+
+echo_status "A/B partition boot investigation"
+
+echo_debug "System information:"
+uname -a | sed 's/^/    /'
+
+echo_debug "Model information:"
+cat /proc/device-tree/model | sed 's/^/    /' || echo "    [Could not read model]"
+echo
+
+echo_debug "OS issue information:"
+if [ -f "/etc/rpi-issue" ]; then
+    cat /etc/rpi-issue | sed 's/^/    /'
+else
+    echo "    [File /etc/rpi-issue does not exist]"
+fi
+
+# $ lsblk -o LABEL,NAME,SIZE,MOUNTPOINTS,TYPE
+# LABEL    NAME          SIZE MOUNTPOINTS   TYPE
+#          mmcblk0      14.6G               disk
+# CONFIGFS ├─mmcblk0p1    16M /tmp/configfs part
+# BOOT1FS  ├─mmcblk0p2   256M /boot         part
+# BOOT2FS  ├─mmcblk0p3   256M               part
+#          ├─mmcblk0p4     1K               part
+# ROOT1FS  ├─mmcblk0p5   2.4G /             part
+# ROOT2FS  ├─mmcblk0p6   2.4G               part
+# HOME     └─mmcblk0p7   9.2G /home         part
+#          mmcblk0boot0    4M               disk
+#          mmcblk0boot1    4M               disk
+
+echo_debug "Current partition set analysis:"
+CURRENT_BOOT_DEV=$(findmnt -n -o SOURCE /boot)
+CURRENT_ROOT_DEV=$(findmnt -n -o SOURCE /)
+CURRENT_HOME_DEV=$(findmnt -n -o SOURCE /home)
+
+if [[ "$CURRENT_BOOT_DEV" == "/dev/mmcblk0p2" && "$CURRENT_ROOT_DEV" == "/dev/mmcblk0p5" ]]; then
+    echo "    Currently using partition set A (boot from p2, root from p5)"
+    CURRENT_SET="A"
+elif [[ "$CURRENT_BOOT_DEV" == "/dev/mmcblk0p3" && "$CURRENT_ROOT_DEV" == "/dev/mmcblk0p6" ]]; then
+    echo "    Currently using partition set B (boot from p3, root from p6)"
+    CURRENT_SET="B"
+else
+    echo "    WARNING: Mixed partition usage!"
+    echo "    Boot from: $CURRENT_BOOT_DEV"
+    echo "    Root from: $CURRENT_ROOT_DEV"
+    if [[ "$CURRENT_BOOT_DEV" == "/dev/mmcblk0p2" ]]; then
+        CURRENT_SET="Mixed (boot A)"
+    elif [[ "$CURRENT_BOOT_DEV" == "/dev/mmcblk0p3" ]]; then
+        CURRENT_SET="Mixed (boot B)"
+    else
+        CURRENT_SET="Unknown"
+    fi
+fi
+
+echo_debug "Current /etc/fstab contents:"
+cat /etc/fstab | sed 's/^/    /'
+
+echo_debug "Mount points:"
+mount | grep mmcblk0 | sed 's/^/    /'
+
+echo_debug "Current boot partition contents:"
+ls -la /boot | sed 's/^/    /'
+
+echo_debug "Contents of /boot/cmdline.txt:"
+cat /boot/cmdline.txt | sed 's/^/    /'
+
+echo_debug "Contents of /boot/cmdline-b.txt:"
+if [ -f "/boot/cmdline-b.txt" ]; then
+    cat /boot/cmdline-b.txt | sed 's/^/    /'
+else
+    echo "    [File does not exist]"
+fi
+
+echo_debug "Checking for legacy files in /boot (these should NOT exist):"
+if [ -f "/boot/tryboot.txt" ]; then
+    echo_warning "Legacy tryboot.txt found in /boot - this should only be in CONFIGFS"
+    cat /boot/tryboot.txt | sed 's/^/    /'
+else
+    echo "    [No legacy tryboot.txt in /boot - correct]"
+fi
+
+if [ -f "/boot/autoboot.txt" ]; then
+    echo_warning "Legacy autoboot.txt found in /boot - this should only be in CONFIGFS"
+    cat /boot/autoboot.txt | sed 's/^/    /'
+else
+    echo "    [No legacy autoboot.txt in /boot - correct]"
+fi
+
+echo_debug "Checking CONFIGFS partition (p1) for autoboot.txt and tryboot.txt:"
+
+CONFIGFS_DEV="/dev/mmcblk0p1"
+CONFIGFS_MNT=$(mktemp -d)
+
+if mount "$CONFIGFS_DEV" "$CONFIGFS_MNT"; then
+    if [ -f "$CONFIGFS_MNT/autoboot.txt" ]; then
+        echo "    Contents of CONFIGFS autoboot.txt:"
+        cat "$CONFIGFS_MNT/autoboot.txt" | sed 's/^/        /'
+        BOOT1_PARTITION=$(grep "^boot_partition=" "$CONFIGFS_MNT/autoboot.txt" | head -1 | cut -d'=' -f2)
+    else
+        echo "    [CONFIGFS has no autoboot.txt file]"
+        BOOT1_PARTITION="None"
+    fi
+    
+    if [ -f "$CONFIGFS_MNT/tryboot.txt" ]; then
+        echo "    Contents of CONFIGFS tryboot.txt:"
+        cat "$CONFIGFS_MNT/tryboot.txt" | sed 's/^/        /'
+    else
+        echo "    [CONFIGFS has no tryboot.txt file]"
+    fi
+    umount "$CONFIGFS_MNT"
+else
+    echo_warning "Failed to mount CONFIGFS partition to check autoboot.txt"
+    BOOT1_PARTITION="Unknown"
+fi
+
+rmdir "$CONFIGFS_MNT"
+
+echo_debug "Partition layout:"
+lsblk -o NAME,SIZE,MOUNTPOINT,FSTYPE,LABEL,UUID,PARTUUID | sed 's/^/    /'
+
+echo_debug "Partition flags:"
+parted /dev/mmcblk0 print | sed 's/^/    /'
+
+echo_debug "Partition usage statistics:"
+df -h | grep root | sed 's/^/    /'
+df -h | grep mmcblk0 | sed 's/^/    /'
+
+echo_debug "Kernel command line used:"
+cat /proc/cmdline | sed 's/^/    /'
+
+echo_debug "Boot history:"
+journalctl --list-boots | head -5 | sed 's/^/    /'
+
+echo_debug "Boot messages related to mmc/partitions:"
+dmesg | grep -i -e mmc -e partition -e boot | head -20 | sed 's/^/    /'
+
+echo_debug "Bootloader version:"
+vcgencmd bootloader_version | sed 's/^/    /'
+
+DEFAULT_BOOT="Unknown"
+
+if [ "$BOOT1_PARTITION" = "2" ]; then
+    DEFAULT_BOOT="A"
+elif [ "$BOOT1_PARTITION" = "3" ]; then
+    DEFAULT_BOOT="B"
+elif [ "$BOOT1_PARTITION" = "None" ]; then
+    DEFAULT_BOOT="A (default without autoboot.txt)"
+fi
+
+POWER_LOSS_BOOT="Unknown"
+if [ "$BOOT1_PARTITION" = "2" ]; then
+    POWER_LOSS_BOOT="A"
+elif [ "$BOOT1_PARTITION" = "3" ]; then
+    POWER_LOSS_BOOT="B"
+elif [ "$BOOT1_PARTITION" = "None" ]; then
+    POWER_LOSS_BOOT="A (default)"
+else
+    POWER_LOSS_BOOT="Unknown"
+fi
+
+echo_debug "Summary:"
+echo " - Currently on partition set: $CURRENT_SET"
+echo " - Current boot partition: $CURRENT_BOOT_DEV"
+echo " - Current root partition: $CURRENT_ROOT_DEV"
+echo " - Current home partition: $CURRENT_HOME_DEV"
+echo " - Default boot set in current autoboot.txt: $DEFAULT_BOOT"
+if [[ "$POWER_LOSS_BOOT" == "A" || "$POWER_LOSS_BOOT" == "B" || "$POWER_LOSS_BOOT" == "A (default)" ]]; then
+    echo " - Partition set that will boot after power loss: $POWER_LOSS_BOOT"
+fi
+echo " - CONFIGFS autoboot.txt setting: $(if [ "$BOOT1_PARTITION" = "None" ]; then echo "Not present"; else echo "$BOOT1_PARTITION"; fi)"
+echo_status "Done"

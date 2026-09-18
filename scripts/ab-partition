@@ -1,0 +1,795 @@
+#!/bin/bash -e
+# ab-partition - A/B partition script for WLAN Pi OS images
+#
+# Converts a WLAN Pi OS image to an A/B partition structure.
+# Intended to create base image for eMMC based devices.
+# Created for the WLAN Pi Go and bookworm based images.
+#
+# Usage: sudo ./ab-partition <input> <output>
+# Troubleshooting: sudo bash -x ./ab-partition <input> <output>
+#
+# Requires: parted mount util-linux dosfstools rsync
+#
+# Version: v0.3
+# Author: Josh Schmelzle
+# License: BSD-3
+
+function show_usage {
+    echo "Usage: $0 <input> <output> [<root_size_mb>]"
+    echo
+    echo "Convert a standard WLAN Pi OS image to an A/B partition structure"
+    echo
+    echo "Arguments:"
+    echo "  input           path to original WLAN Pi OS image"
+    echo "  output          path where new A/B partitioned image will be saved"
+    echo "  root_size_mb    (optional) size of each root partition in MB (default: 2500)"
+    echo
+    echo "Example:"
+    echo "  $0 wlanpi-os-20250416-154720-lite.img wlanpi-os-20250416-154720-lite-AB-partitioned.img"
+    echo "  $0 wlanpi-os-20250416-154720-lite.img wlanpi-os-20250416-154720-lite-AB-partitioned.img 4000"
+    exit 1
+}
+
+for cmd in parted losetup mkfs.ext4 mkfs.vfat rsync; do
+    if ! command -v $cmd &> /dev/null; then
+        echo "Error: required tool/cmd '$cmd' not found. Install and try again."
+        exit 1
+    fi
+done
+
+if [ "$(id -u)" -ne 0 ]; then
+    echo "Error: need root (sudo)."
+    exit 1
+fi
+
+if [ "$#" -lt 2 ] || [ "$#" -gt 3 ]; then
+    show_usage
+fi
+
+echo "=== WLAN Pi A/B partition script ==="
+echo
+
+INPUT_IMAGE="$1"
+OUTPUT_IMAGE="$2"
+DEFAULT_ROOT_SIZE=2500 # MB
+
+if [ "$#" -eq 3 ]; then
+    if [[ "$3" =~ ^[0-9]+$ ]]; then
+        ROOT_SIZE_MB="$3"
+        echo "Using custom root partition size: $ROOT_SIZE_MB MB"
+    else
+        echo "Error: root_size_mb must be a positive integer."
+        exit 1
+    fi
+else
+    ROOT_SIZE_MB=$DEFAULT_ROOT_SIZE
+    echo "Using default root partition size: $ROOT_SIZE_MB MB"
+fi
+
+if [ ! -f "$INPUT_IMAGE" ]; then
+    echo "Error: '$INPUT_IMAGE' not found."
+    exit 1
+fi
+
+TEMP_DIR=$(mktemp -d)
+ORIGINAL_BOOT="$TEMP_DIR/original_boot"
+ORIGINAL_ROOT="$TEMP_DIR/original_root"
+NEW_ROOTFS="$TEMP_DIR/new_rootfs"
+mkdir -p "$ORIGINAL_BOOT" "$ORIGINAL_ROOT" "$NEW_ROOTFS"
+
+cleanup() {  
+  echo "Starting cleanup ..."
+  (
+    set +e
+    if mountpoint -q "$NEW_ROOTFS/boot" 2>/dev/null; then umount "$NEW_ROOTFS/boot"; fi
+    if mountpoint -q "$NEW_ROOTFS/home" 2>/dev/null; then umount "$NEW_ROOTFS/home"; fi
+    if mountpoint -q "$NEW_ROOTFS" 2>/dev/null; then umount "$NEW_ROOTFS"; fi
+    if mountpoint -q "$ORIGINAL_BOOT" 2>/dev/null; then umount "$ORIGINAL_BOOT"; fi
+    if mountpoint -q "$ORIGINAL_ROOT" 2>/dev/null; then umount "$ORIGINAL_ROOT"; fi
+    losetup -D
+    rm -rf "$TEMP_DIR" 2>/dev/null || true
+  )
+  echo "Cleanup complete ..."
+}
+trap cleanup EXIT INT TERM
+
+echo "Input image: $INPUT_IMAGE"
+echo "Output image: $OUTPUT_IMAGE"
+echo "Temp directory: $TEMP_DIR"
+
+ORIGINAL_SIZE=$(stat -c%s "$INPUT_IMAGE")
+echo "Original image size: $(( ORIGINAL_SIZE / 1024 / 1024 )) MB"
+
+CONFIGFS_SIZE=$((16 * 1024 * 1024))         # 16 MB
+BOOT1_SIZE=$((256 * 1024 * 1024))           # 256 MB
+BOOT2_SIZE="${BOOT1_SIZE}"
+ROOT1_SIZE=$((ROOT_SIZE_MB * 1024 * 1024))  # MB to bytes
+ROOT2_SIZE="${ROOT1_SIZE}"
+PERSISTENT_MIN_SIZE=$((512 * 1024 * 1024))    # 512 MB
+BUFFER_SIZE=$((32 * 1024 * 1024))           # 32 MB
+ALIGN=$((1024 * 1024))
+
+NEW_SIZE=$ALIGN
+NEW_SIZE=$((NEW_SIZE + CONFIGFS_SIZE))
+NEW_SIZE=$((NEW_SIZE + BOOT1_SIZE))
+NEW_SIZE=$((NEW_SIZE + BOOT2_SIZE))
+NEW_SIZE=$((NEW_SIZE + ROOT1_SIZE))
+NEW_SIZE=$((NEW_SIZE + ROOT2_SIZE))
+NEW_SIZE=$((NEW_SIZE + PERSISTENT_MIN_SIZE))
+NEW_SIZE=$((NEW_SIZE + BUFFER_SIZE))
+NEW_SIZE=$(((NEW_SIZE + ALIGN - 1) / ALIGN * ALIGN )) # Align to boundary
+
+echo "Required size: $((NEW_SIZE / 1024 / 1024)) MB"
+
+echo "Creating a copy of the original image ..."
+if [ -f "$OUTPUT_IMAGE" ]; then
+    echo "Warning: removing already existing output file ..."
+    rm -f "$OUTPUT_IMAGE"
+fi
+
+echo "Copying image (${ORIGINAL_SIZE} bytes) ..."
+cp "$INPUT_IMAGE" "$OUTPUT_IMAGE"
+
+echo "Resizing image file ..."
+truncate -s "$NEW_SIZE" "$OUTPUT_IMAGE"
+
+echo "Mounting original image ..."
+ORIG_LOOP_DEV=$(losetup --show -P -f "$INPUT_IMAGE")
+trap 'losetup -d $ORIG_LOOP_DEV 2>/dev/null || true' EXIT
+
+mount "${ORIG_LOOP_DEV}"p1 "$ORIGINAL_BOOT"
+mount "${ORIG_LOOP_DEV}"p2 "$ORIGINAL_ROOT"
+trap 'umount $ORIGINAL_BOOT 2>/dev/null || true; umount $ORIGINAL_ROOT 2>/dev/null || true; losetup -d $ORIG_LOOP_DEV 2>/dev/null || true' EXIT
+
+ORIGINAL_BOOT_SIZE=$(du -s -B1 "$ORIGINAL_BOOT" | cut -f1)
+ORIGINAL_ROOT_SIZE=$(du -s -B1 "$ORIGINAL_ROOT" | cut -f1)
+
+echo "Original boot size: $(( ORIGINAL_BOOT_SIZE / 1024 / 1024 )) MB"
+echo "Original root size: $(( ORIGINAL_ROOT_SIZE / 1024 / 1024 )) MB"
+
+BOOT1_SIZE=$((ORIGINAL_BOOT_SIZE + 64 * 1024 * 1024)) # Original + 64MB margin
+BOOT1_SIZE=$(((BOOT1_SIZE + ALIGN - 1) / ALIGN * ALIGN)) # Align to boundary
+BOOT1_SIZE=$((BOOT1_SIZE < 256 * 1024 * 1024 ? 256 * 1024 * 1024 : BOOT1_SIZE)) # Min 256MB
+
+ROOT1_SIZE=$(((ROOT1_SIZE + ALIGN - 1) / ALIGN * ALIGN)) # Align to boundary
+
+BOOT2_SIZE=$BOOT1_SIZE
+ROOT2_SIZE=$ROOT1_SIZE
+
+total_needed=$((BOOT1_SIZE + BOOT2_SIZE + ROOT1_SIZE + ROOT2_SIZE + PERSISTENT_MIN_SIZE + BUFFER_SIZE))
+total_needed=$(( (total_needed + ALIGN - 1) / ALIGN * ALIGN ))  # Align to boundary
+
+echo "Total space needed for all partitions: $((total_needed / 1024 / 1024)) MB"
+
+echo "Calculated partition sizes:"
+echo "- Boot A: $(( BOOT1_SIZE / 1024 / 1024 )) MB"
+echo "- Boot B: $(( BOOT2_SIZE / 1024 / 1024 )) MB"
+echo "- Root A: $(( ROOT1_SIZE / 1024 / 1024 )) MB"
+echo "- Root B: $(( ROOT2_SIZE / 1024 / 1024 )) MB"
+echo "- Min persistent: $(( PERSISTENT_MIN_SIZE / 1024 / 1024 )) MB"
+echo "- Buffer: $(( BUFFER_SIZE / 1024 / 1024 )) MB"
+
+umount "$ORIGINAL_BOOT"
+umount "$ORIGINAL_ROOT"
+losetup -d "$ORIG_LOOP_DEV"
+trap - EXIT
+
+echo "Setting up loop device for the new image ..."
+NEW_LOOP_DEV=$(losetup --show -P -f "$OUTPUT_IMAGE")
+trap 'losetup -d $NEW_LOOP_DEV 2>/dev/null || true' EXIT
+
+echo "Calculating partition positions ..."
+SECTOR_SIZE=512 # Define in sectors (512 bytes each)
+SECTORS_PER_MB=$((1024*1024 / SECTOR_SIZE))  # 2048 sectors per MB
+
+config_start=$((SECTORS_PER_MB * 1))  # Start at 1MB
+config_size=$((CONFIGFS_SIZE / SECTOR_SIZE))
+config_end=$((config_start + config_size - 1))
+
+
+p1_start=$((config_end + 1))
+p1_start=$(((p1_start + SECTORS_PER_MB - 1) / SECTORS_PER_MB * SECTORS_PER_MB))  # Align to MB
+p1_size=$((BOOT1_SIZE / SECTOR_SIZE))
+p1_end=$((p1_start + p1_size - 1))
+
+p2_start=$((p1_end + 1))
+p2_start=$(((p2_start + SECTORS_PER_MB - 1) / SECTORS_PER_MB * SECTORS_PER_MB))  # Align to MB
+p2_size=$((BOOT2_SIZE / SECTOR_SIZE))
+p2_end=$((p2_start + p2_size - 1))
+
+p3_start=$((p2_end + 1))
+p3_start=$(((p3_start + SECTORS_PER_MB - 1) / SECTORS_PER_MB * SECTORS_PER_MB))  # Align to MB
+
+echo "Verifying image size ..."
+ACTUAL_SIZE=$(stat -c%s "$OUTPUT_IMAGE")
+LAST_SECTOR=$((ACTUAL_SIZE / SECTOR_SIZE - 1))
+echo "Actual image size: $((ACTUAL_SIZE / 1024 / 1024)) MB (sectors: $((ACTUAL_SIZE / SECTOR_SIZE)))"
+echo "Last available sector: $LAST_SECTOR"
+
+echo "Calculating logical partitions within extended partition ..."
+lp1_start=$((p3_start + SECTORS_PER_MB)) # First lp starts 1 MB into extended partition
+lp1_size=$((ROOT1_SIZE / SECTOR_SIZE))
+lp1_end=$((lp1_start + lp1_size - 1))
+
+lp2_start=$((lp1_end + SECTORS_PER_MB + 1)) # 1MB gap
+lp2_size=$((ROOT2_SIZE / SECTOR_SIZE))
+lp2_end=$((lp2_start + lp2_size - 1))
+
+lp3_start=$((lp2_end + SECTORS_PER_MB + 1)) # 1MB gap
+persistent_sectors=$((PERSISTENT_MIN_SIZE / SECTOR_SIZE))
+lp3_end=$((lp3_start + persistent_sectors - 1))
+
+if [ $lp3_end -ge $((LAST_SECTOR - SECTORS_PER_MB)) ]; then
+    echo "Adjusting persistent partition size to fit within available space"
+    lp3_end=$((LAST_SECTOR - SECTORS_PER_MB))
+    if [ $lp3_end -le $lp3_start ]; then
+        echo "Error: Not enough space for even minimal persistent partition"
+        exit 1
+    fi
+fi
+
+echo "Verifying partition calculations ..."
+echo "p1: $p1_start -> $p1_end (size: $p1_size sectors)"
+echo "p2: $p2_start -> $p2_end (size: $p2_size sectors)"
+echo "p3: $p3_start -> $LAST_SECTOR"
+echo "lp1: $lp1_start -> $lp1_end (size: $lp1_size sectors)"
+echo "lp2: $lp2_start -> $lp2_end (size: $lp2_size sectors)"
+echo "lp3: $lp3_start -> $lp3_end"
+
+echo "Final image size verification ... Maybe (: ..."
+if [ $lp3_end -ge $LAST_SECTOR ]; then
+    echo "Error: partition layout exceeds image size!"
+    echo "Last partition ends at sector $lp3_end, but image ends at $LAST_SECTOR"
+    exit 1
+fi
+
+echo "Running parted ..."
+parted --script "$OUTPUT_IMAGE" mklabel msdos
+parted --script "$OUTPUT_IMAGE" unit s mkpart primary fat16 ${config_start} ${config_end} # Config FS
+parted --script "$OUTPUT_IMAGE" unit s mkpart primary fat32 ${p1_start} ${p1_end} # Primary boot A
+parted --script "$OUTPUT_IMAGE" set 2 boot on
+parted --script "$OUTPUT_IMAGE" unit s mkpart primary fat32 ${p2_start} ${p2_end} # Primary boot B
+parted --script "$OUTPUT_IMAGE" unit s mkpart extended ${p3_start} ${LAST_SECTOR}
+
+parted --script "$OUTPUT_IMAGE" unit s mkpart logical ext4 ${lp1_start} ${lp1_end} # Root A
+parted --script "$OUTPUT_IMAGE" unit s mkpart logical ext4 ${lp2_start} ${lp2_end} # Root B
+parted --script "$OUTPUT_IMAGE" unit s mkpart logical ext4 ${lp3_start} ${lp3_end} # Persistent
+
+partprobe "$NEW_LOOP_DEV"
+
+echo "Waiting for logical partitions to appear ..."
+success=false
+for i in {1..10}; do
+    if [ -e "${NEW_LOOP_DEV}p5" ] && [ -e "${NEW_LOOP_DEV}p6" ] && [ -e "${NEW_LOOP_DEV}p7" ]; then
+        echo "All logical partitions detected after $i attempts"
+        success=true
+        break
+    fi
+    echo "Waiting for partitions (attempt $i) ..."
+    sleep 1
+    partprobe "$NEW_LOOP_DEV"
+done
+
+if [ "$success" = false ]; then
+    echo "ERROR: Failed to detect logical partitions after 10 attempts"
+    ls -la "${NEW_LOOP_DEV}"*
+    exit 1
+fi
+
+echo "Giving the system three seconds to stabilize ..."
+sleep 3
+CONFIG_DEV="${NEW_LOOP_DEV}p1"
+BOOT1_DEV="${NEW_LOOP_DEV}p2"
+BOOT2_DEV="${NEW_LOOP_DEV}p3"
+# p4 is the extended container; skipping.
+ROOT1_DEV="${NEW_LOOP_DEV}p5"
+ROOT2_DEV="${NEW_LOOP_DEV}p6"
+PERSISTENT_DEV="${NEW_LOOP_DEV}p7" # /home is last partition so we can resize it to fill fs
+
+echo "Formatting partitions ..."
+CONFIG_SIZE=$(blockdev --getsize64 "$CONFIG_DEV")
+if [ "$CONFIG_SIZE" -lt 134742016 ]; then
+    FAT_SIZE=16
+    echo "Fat size set to 16 ..."
+else
+    FAT_SIZE=32
+    echo "Fat size set to 32 ..."
+fi
+mkfs.vfat -F "$FAT_SIZE" -n CONFIGFS "${CONFIG_DEV}"
+mkfs.vfat -F "$FAT_SIZE" -n BOOT1FS "${BOOT1_DEV}"
+mkfs.vfat -F "$FAT_SIZE" -n BOOT2FS "${BOOT2_DEV}"
+mkfs.ext4 -F -L ROOT1FS "${ROOT1_DEV}" -O ^huge_file
+mkfs.ext4 -F -L ROOT2FS "${ROOT2_DEV}" -O ^huge_file
+mkfs.ext4 -F -L HOME "${PERSISTENT_DEV}"
+
+echo "Setting up minimal failback on boot B partition ..."
+BOOT2_MNT="$TEMP_DIR/boot2_mnt"
+mkdir -p "$BOOT2_MNT"
+mount -v "${BOOT2_DEV}" "${BOOT2_MNT}" -t vfat
+
+echo "Copying essential firmware files to boot B ..."
+for file in bootcode.bin start.elf fixup.dat; do
+    if [ -f "$ORIGINAL_BOOT/$file" ]; then
+        cp -v "$ORIGINAL_BOOT/$file" "$BOOT2_MNT/"
+    else
+        echo "WARNING: Essential file $file not found in original boot!"
+    fi
+done
+
+echo "Getting partition UUIDs ..."
+BOOT1_PARTUUID=$(blkid -s PARTUUID -o value "${BOOT1_DEV}")
+BOOT2_PARTUUID=$(blkid -s PARTUUID -o value "${BOOT2_DEV}")
+ROOT1_PARTUUID=$(blkid -s PARTUUID -o value "${ROOT1_DEV}")
+ROOT2_PARTUUID=$(blkid -s PARTUUID -o value "${ROOT2_DEV}")
+PERSISTENT_PARTUUID=$(blkid -s PARTUUID -o value "${PERSISTENT_DEV}")
+echo " - BOOT1: $BOOT1_PARTUUID"
+echo " - BOOT2: $BOOT2_PARTUUID"
+echo " - ROOT1: $ROOT1_PARTUUID"
+echo " - ROOT2: $ROOT2_PARTUUID"
+echo " - PERSISTENT: $PERSISTENT_PARTUUID"
+
+echo "Re-mounting original image to copy content ..."
+ORIG_LOOP_DEV=$(losetup --show -P -f "$INPUT_IMAGE")
+mount "${ORIG_LOOP_DEV}"p1 "$ORIGINAL_BOOT"
+mount "${ORIG_LOOP_DEV}"p2 "$ORIGINAL_ROOT"
+
+echo "Setting up A/B boot configuration on config partition ..."
+CONFIG_MNT="$TEMP_DIR/config_mnt"
+mkdir -p "$CONFIG_MNT"
+mount -v "${CONFIG_DEV}" "${CONFIG_MNT}" -t vfat
+
+cat > "$CONFIG_MNT/autoboot.txt" << EOF
+boot_partition=2
+tryboot_a_b=1
+EOF
+
+cat > "$CONFIG_MNT/tryboot.txt" << EOF
+# This configuration will be used when booting in tryboot mode
+# Point to the B partitions
+kernel=wlanpi-kernel8.img
+os_prefix=3:/
+cmdline=cmdline-b.txt
+EOF
+
+sync
+umount "$CONFIG_MNT"
+rmdir "$CONFIG_MNT"
+
+echo "Mounting new partitions ..."
+mount -v "${ROOT1_DEV}" "${NEW_ROOTFS}" -t ext4
+mkdir -p "${NEW_ROOTFS}/boot"
+mount -v "${BOOT1_DEV}" "${NEW_ROOTFS}/boot" -t vfat
+mkdir -p "${NEW_ROOTFS}/home"
+mount -v "${PERSISTENT_DEV}" "${NEW_ROOTFS}/home" -t ext4
+
+echo "Copying root filesystem content ..."
+rsync -aHAXx --exclude /boot "$ORIGINAL_ROOT/" "$NEW_ROOTFS/"
+echo "Copying boot files ..."
+cp -a "$ORIGINAL_BOOT"/* "$NEW_ROOTFS/boot/"
+
+echo "Verifying critical boot files ..."
+for file in start.elf fixup.dat wlanpi-kernel8.img bootcode.bin; do
+    if ! cmp -s "$ORIGINAL_BOOT/$file" "$NEW_ROOTFS/boot/$file"; then
+        echo "WARNING: $file may not have copied correctly. Trying direct copy ..."
+        cp -a "$ORIGINAL_BOOT/$file" "$NEW_ROOTFS/boot/$file"
+    fi
+done
+
+echo "Making sure kernel modules are owned by root ..."
+chown -R root:root "$NEW_ROOTFS/lib/modules/"
+
+echo "Updating bootloader configuration ..."
+echo "Updating root parameter in cmdline.txt ..."
+if [ -f "$NEW_ROOTFS/boot/cmdline.txt" ]; then
+    cp "$NEW_ROOTFS/boot/cmdline.txt" "$NEW_ROOTFS/boot/cmdline.txt.bak"
+    sed -i "s|root=[^ ]*|root=PARTUUID=${ROOT1_PARTUUID}|" "$NEW_ROOTFS/boot/cmdline.txt"
+
+    cp "$NEW_ROOTFS/boot/cmdline.txt" "$NEW_ROOTFS/boot/cmdline-b.txt"
+    sed -i "s|PARTUUID=${ROOT1_PARTUUID}|PARTUUID=${ROOT2_PARTUUID}|" "$NEW_ROOTFS/boot/cmdline-b.txt"
+
+    echo
+    echo "New cmdline.txt content:"
+    cat "$NEW_ROOTFS/boot/cmdline.txt"
+    echo
+    echo "New cmdline-b.txt content:"
+    cat "$NEW_ROOTFS/boot/cmdline-b.txt"
+    echo
+else
+    echo "ERROR: cmdline.txt not found in boot directory!"
+fi
+
+echo "Checking for boot directory symlinks ..."
+find "$ORIGINAL_ROOT/boot" -type l | while read -r symlink; do
+    if [ -z "$symlink" ]; then
+        continue
+    fi
+    
+    target=$(readlink "$symlink")
+    if [ -z "$target" ]; then
+        continue
+    fi
+    
+    filename=$(basename "$symlink")
+    
+    if [[ "$filename" == "overlays" && "$target" == "firmware/overlays" ]]; then
+        if [ ! -d "$NEW_ROOTFS/boot/overlays" ]; then
+            mkdir -p "$NEW_ROOTFS/boot/overlays"
+            
+            if [ -d "$ORIGINAL_BOOT/overlays" ]; then
+                cp -a "$ORIGINAL_BOOT/overlays/"* "$NEW_ROOTFS/boot/overlays/"
+                echo "Created overlays directory with content from original boot"
+            fi
+        fi
+        continue
+    fi
+    
+    if [[ "$target" == *"firmware"* ]]; then
+        echo "WARNING: Skipping firmware-related symlink: $filename -> $target"
+        continue
+    fi
+    
+    source_file="$NEW_ROOTFS/boot/$target"
+    dest_file="$NEW_ROOTFS/boot/$filename"
+    
+    if [ -f "$source_file" ]; then
+        cp -a "$source_file" "$dest_file"
+        echo "Copied file instead of symlink: $filename <- $target"
+    else
+        echo "Not copying: $filename -> $target (target not found)"
+    fi
+done
+
+echo "Ensuring the overlay directory exists ..."
+if [ ! -d "$NEW_ROOTFS/boot/overlays" ] && [ -d "$ORIGINAL_BOOT/overlays" ]; then
+    mkdir -p "$NEW_ROOTFS/boot/overlays"
+    cp -a "$ORIGINAL_BOOT/overlays/"* "$NEW_ROOTFS/boot/overlays/"
+    echo "Ensured overlays directory exists with proper content ..."
+fi
+
+echo "Updating fstab for new partition layout ..."
+cat > "$NEW_ROOTFS/etc/fstab" << EOF
+PARTUUID=${ROOT1_PARTUUID}  /        ext4    defaults,noatime  0  1
+PARTUUID=${BOOT1_PARTUUID}  /boot    vfat    defaults          0  2
+PARTUUID=${PERSISTENT_PARTUUID}   /home    ext4    defaults,noatime  0  2
+EOF
+
+echo "Creating home partition expansion script ..."
+mkdir -p "$NEW_ROOTFS/usr/local/sbin"
+cat > "$NEW_ROOTFS/usr/local/sbin/expand-home-partition" << 'EOF'
+#!/bin/bash
+
+# First boot script to expand the home partition
+
+set -euo pipefail  # Exit on any error, undefined variables, or pipe failures
+
+LOG_FILE="/var/log/expand-home-partition.log"
+LOCK_FILE="/var/lock/expand-home-partition.lock"
+EXPANDED_MARKER="/etc/home-partition-expanded"
+mkdir -p "$(dirname "$LOG_FILE")" "$(dirname "$LOCK_FILE")"
+
+log() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" | tee -a "$LOG_FILE"
+}
+
+cleanup() {
+    local exit_code=$?
+    if [[ -f "$LOCK_FILE" ]]; then
+        rm -f "$LOCK_FILE"
+    fi
+
+    if ! mountpoint -q /home 2>/dev/null; then
+        log "Emergency: Attempting to remount /home"
+        # Try to determine HOME_PART if not set
+        local home_part="${HOME_PART:-$(findmnt -n -o SOURCE /home 2>/dev/null || echo '')}"
+        if [[ -n "$home_part" ]]; then
+            mount "$home_part" /home 2>/dev/null || log "ERROR: Failed to remount /home"
+        else
+            log "ERROR: Could not determine home partition for emergency remount"
+        fi
+    fi
+
+    exit $exit_code
+}
+
+trap cleanup EXIT INT TERM
+
+if [[ -f "$EXPANDED_MARKER" ]]; then
+    log "Home partition already expanded ... exiting..."
+    exit 0
+fi
+
+if [[ -f "$LOCK_FILE" ]]; then
+    log "Another expansion process is running, exiting"
+    exit 1
+fi
+touch "$LOCK_FILE"
+
+log "Starting home partition expansion"
+
+
+DEVICE=$(findmnt -n -o SOURCE /home | sed 's/p[0-9]\+$//' 2>/dev/null)
+HOME_PART=$(findmnt -n -o SOURCE /home 2>/dev/null)
+
+if [[ -z "$DEVICE" || -z "$HOME_PART" ]]; then
+    log "ERROR: Could not determine device or home partition"
+    exit 1
+fi
+
+if [[ ! -b "$DEVICE" || ! -b "$HOME_PART" ]]; then
+    log "ERROR: Device or partition does not exist"
+    exit 1
+fi
+
+EXTENDED_PART="${DEVICE}p4"
+log "Device: $DEVICE, Home partition: $HOME_PART, Extended: $EXTENDED_PART"
+
+TOTAL_SECTORS=$(fdisk -l "$DEVICE" 2>/dev/null | grep "sectors$" | awk '{print $7}')
+if [[ -z "$TOTAL_SECTORS" || ! "$TOTAL_SECTORS" =~ ^[0-9]+$ ]]; then
+    log "ERROR: Could not determine total sectors"
+    exit 1
+fi
+
+log "Total sectors: $TOTAL_SECTORS"
+
+# Backup current partition table
+log "Backing up partition table"
+sfdisk -d "$DEVICE" > "/tmp/partition-backup-$(date +%s).sfdisk" || {
+    log "WARNING: Could not backup partition table"
+}
+
+log "Unmounting home partition"
+sync
+
+for attempt in {1..3}; do
+    if umount /home 2>/dev/null; then
+        log "Successfully unmounted /home on attempt $attempt"
+        break
+    elif [[ $attempt -eq 3 ]]; then
+        log "ERROR: Failed to unmount /home after 3 attempts"
+        exit 1
+    else
+        log "Unmount attempt $attempt failed, retrying in 2 seconds"
+        sleep 2
+    fi
+done
+
+log "Checking filesystem before expansion"
+if ! timeout 30 e2fsck -f "$HOME_PART" 2>&1 | tee -a "$LOG_FILE"; then
+    log "ERROR: Filesystem check failed or timed out, attempting repair"
+    e2fsck -fy "$HOME_PART" 2>&1 | tee -a "$LOG_FILE"
+    repair_exit_code=$?
+    if [[ $repair_exit_code -eq 0 || $repair_exit_code -eq 1 ]]; then
+        log "Filesystem repaired successfully"
+    else
+        log "ERROR: Critical filesystem repair failed with exit code $repair_exit_code, manual intervention required"
+        mount "$HOME_PART" /home
+        exit 1
+    fi
+fi
+
+log "Resizing extended partition to fill disk"
+if ! parted -s "$DEVICE" unit s resizepart 4 $((TOTAL_SECTORS - 2048)) 2>&1 | tee -a "$LOG_FILE"; then
+    log "ERROR: Failed to resize extended partition"
+    mount "$HOME_PART" /home
+    exit 1
+fi
+
+log "Updating partition table"
+for attempt in {1..3}; do
+    partprobe "$DEVICE" 2>/dev/null && sleep 2 && break
+    log "Partition table update attempt $attempt failed, retrying"
+    sleep 3
+    if [[ $attempt -eq 3 ]]; then
+        log "ERROR: Failed to update partition table after 3 attempts"
+        mount "$HOME_PART" /home
+        exit 1
+    fi
+done
+
+EXTENDED_END=$(fdisk -l "$DEVICE" 2>/dev/null | grep "$(basename "$EXTENDED_PART")" | awk '{print $3}')
+if [[ -z "$EXTENDED_END" || ! "$EXTENDED_END" =~ ^[0-9]+$ ]]; then
+    log "ERROR: Could not determine extended partition end"
+    mount "$HOME_PART" /home
+    exit 1
+fi
+
+log "Extended partition ends at sector: $EXTENDED_END"
+
+log "Expanding home partition to fill extended partition"
+if ! parted -s "$DEVICE" unit s resizepart 7 $((EXTENDED_END - 2048)) 2>&1 | tee -a "$LOG_FILE"; then
+    log "ERROR: Failed to resize home partition"
+    mount "$HOME_PART" /home
+    exit 1
+fi
+
+log "Updating partition table (final)"
+for attempt in {1..3}; do
+    partprobe "$DEVICE" 2>/dev/null && sleep 2 && break
+    log "Partition table update attempt $attempt failed, retrying"
+    sleep 3
+    if [[ $attempt -eq 3 ]]; then
+        log "ERROR: Failed to update final partition table after 3 attempts"
+        mount "$HOME_PART" /home
+        exit 1
+    fi
+done
+
+log "Final filesystem check before resize"
+if ! timeout 30 e2fsck -f "$HOME_PART" 2>&1 | tee -a "$LOG_FILE"; then
+    log "WARNING: Filesystem check failed or timed out, attempting repair"
+    e2fsck -fy "$HOME_PART" 2>&1 | tee -a "$LOG_FILE"
+    repair_exit_code=$?
+    if [[ $repair_exit_code -eq 0 || $repair_exit_code -eq 1 ]]; then
+        log "Filesystem repaired successfully"
+    else
+        log "ERROR: Critical filesystem repair failed with exit code $repair_exit_code, manual intervention required"
+        mount "$HOME_PART" /home
+        exit 1
+    fi
+    log "Verifying final filesystem repair"
+    if ! e2fsck -f "$HOME_PART" 2>&1 | tee -a "$LOG_FILE"; then
+        log "WARNING: Filesystem still has issues, running final force repair"
+        e2fsck -fy "$HOME_PART" 2>&1 | tee -a "$LOG_FILE"
+        repair_exit_code=$?
+        if [[ $repair_exit_code -ne 0 && $repair_exit_code -ne 1 ]]; then
+            log "ERROR: Final force repair failed with exit code $repair_exit_code"
+            mount "$HOME_PART" /home
+            exit 1
+        fi
+    fi
+fi
+
+log "Running final aggressive filesystem repair before resize"
+e2fsck -fy "$HOME_PART" 2>&1 | tee -a "$LOG_FILE"
+repair_exit_code=$?
+if [[ $repair_exit_code -ne 0 && $repair_exit_code -ne 1 ]]; then
+    log "ERROR: Final aggressive repair failed with exit code $repair_exit_code"
+    mount "$HOME_PART" /home
+    exit 1
+fi
+# Try resize with error handling for corruption
+if ! timeout 30 resize2fs "$HOME_PART" 2>&1 | tee -a "$LOG_FILE"; then
+    log "ERROR: Filesystem resize failed, attempting corruption recovery"
+
+    # If resize fails due to corruption, try one more repair cycle
+    log "Running emergency filesystem repair"
+    e2fsck -fy "$HOME_PART" 2>&1 | tee -a "$LOG_FILE"
+    repair_exit_code=$?
+    if [[ $repair_exit_code -eq 0 || $repair_exit_code -eq 1 ]]; then
+        log "Emergency filesystem repair completed"
+    else
+        log "ERROR: Emergency filesystem repair failed with exit code $repair_exit_code"
+        mount "$HOME_PART" /home
+        exit 1
+    fi
+
+    # Try resize one more time
+    log "Retrying filesystem resize after repair"
+    if ! timeout 60 resize2fs "$HOME_PART" 2>&1 | tee -a "$LOG_FILE"; then
+        log "ERROR: Filesystem resize failed after repair - checking if partial resize occurred"
+        if mount "$HOME_PART" /home 2>/dev/null; then
+            CURRENT_SIZE=$(df -BG /home | tail -1 | awk '{print $2}' | sed 's/G//')
+            log "Current filesystem size after failed resize: ${CURRENT_SIZE}GB"
+        fi
+        exit 1
+    fi
+    log "Filesystem resize succeeded after repair"
+fi
+
+log "Remounting home partition"
+if ! mount "$HOME_PART" /home; then
+    log "ERROR: Failed to remount /home"
+    exit 1
+fi
+
+HOME_SIZE=$(df -BG /home | tail -1 | awk '{print $2}' | sed 's/G//')
+HOME_SIZE_INT=${HOME_SIZE%.*}
+if [[ "$HOME_SIZE_INT" -lt 8 ]]; then  # Expect at least 8GB
+    log "WARNING: Home partition size ($HOME_SIZE GB) seems smaller than expected"
+else
+    log "SUCCESS: Home partition expanded to ${HOME_SIZE}GB"
+fi
+
+touch "$EXPANDED_MARKER"
+log "Expansion process completed successfully"
+
+df -h /home | tee -a "$LOG_FILE"
+EOF
+
+chmod +x "$NEW_ROOTFS/usr/local/sbin/expand-home-partition"
+
+mkdir -p "$NEW_ROOTFS/etc/systemd/system"
+cat > "$NEW_ROOTFS/etc/systemd/system/expand-home-partition.service" << EOF
+[Unit]
+Description=Expand home partition to fill remaining disk
+DefaultDependencies=no
+After=local-fs.target
+Before=sysinit.target
+ConditionPathExists=!/etc/home-partition-expanded
+RequiresMountsFor=/home
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/expand-home-partition
+
+[Install]
+WantedBy=sysinit.target
+EOF
+
+mkdir -p "$NEW_ROOTFS/etc/systemd/system/multi-user.target.wants"
+ln -sf "/etc/systemd/system/expand-home-partition.service" "$NEW_ROOTFS/etc/systemd/system/multi-user.target.wants/expand-home-partition.service"
+
+echo "Verifying final image integrity ..."
+if [ ! -f "$NEW_ROOTFS/boot/config.txt" ] || [ ! -f "$NEW_ROOTFS/boot/cmdline.txt" ] || [ ! -f "$NEW_ROOTFS/boot/wlanpi-kernel8.img" ]; then
+  echo "ERROR: critical boot files missing ..."
+  exit 1
+fi
+
+if ! grep -q "PARTUUID=${ROOT1_PARTUUID}" "$NEW_ROOTFS/boot/cmdline.txt"; then
+  echo "ERROR: root partition label not set in cmdline.txt ..."
+  exit 1
+fi
+
+echo "Performing controlled cleanup and finalization ..."
+sync
+sleep 2  # Allow journal to flush
+sync     # Double-sync for safety
+if mountpoint -q "$NEW_ROOTFS/boot"; then
+umount "$NEW_ROOTFS/boot"
+fi
+if mountpoint -q "$NEW_ROOTFS/home"; then
+umount "$NEW_ROOTFS/home"
+fi
+if mountpoint -q "$NEW_ROOTFS"; then
+umount "$NEW_ROOTFS"
+fi
+if mountpoint -q "$ORIGINAL_BOOT"; then
+umount "$ORIGINAL_BOOT"
+fi
+if mountpoint -q "$ORIGINAL_ROOT"; then
+umount "$ORIGINAL_ROOT"
+fi
+if [ -n "$ORIG_LOOP_DEV" ] && losetup -a | grep -q "$ORIG_LOOP_DEV"; then
+losetup -d "$ORIG_LOOP_DEV"
+fi
+if [ -n "$NEW_LOOP_DEV" ] && losetup -a | grep -q "$NEW_LOOP_DEV"; then
+losetup -d "$NEW_LOOP_DEV"
+fi
+sleep 1
+rm -rf "$TEMP_DIR" || {
+echo "Warning: some resources still busy, trying lazy unmount ..."
+for mnt in "$NEW_ROOTFS/boot" "$NEW_ROOTFS/home" "$NEW_ROOTFS"; do
+    mountpoint -q "$mnt" && umount -l "$mnt"
+done
+sleep 1
+rm -rf "$TEMP_DIR" || echo "Warning: could not fully clean up temp directory"
+}
+
+echo "Calculating SHA-256 hash for $OUTPUT_IMAGE ..."
+HASH=$(sha256sum "$OUTPUT_IMAGE")
+echo "$HASH" > "$OUTPUT_IMAGE".sha256
+HASH_ONLY=$(echo "$HASH" | awk '{print $1}')
+
+echo
+echo "====================================="
+echo "A/B partitioned image created successfully!"
+echo "Output image: $OUTPUT_IMAGE"
+echo "SHA-256 hash: $HASH_ONLY"
+echo
+echo "Verify integrity with: sha256sum --check ""$OUTPUT_IMAGE"".sha256"
+echo
+echo "The image has the following partition structure:"
+echo "1: CONFIGFS  - Configuration partition for A/B boot management"
+echo "2: BOOT1FS   - Primary boot partition (A)"
+echo "3: BOOT2FS   - Primary boot partition (B)"
+echo "4: Extended partition container for additional logical partitions"
+echo "  - 5: ROOT1FS   - Root partition (A)"
+echo "  - 6: ROOT2FS  - Root partition (B)"
+echo "  - 7: HOME     - Persistent partition (automatically expanded on first boot)"
+echo
+echo "Partition structure is by default optimized for CM4s with 8 GB of disk"
+echo "====================================="
+echo
+echo "ab-partition finished ..."
+echo

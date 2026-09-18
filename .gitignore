@@ -1,10 +1,11 @@
+01-zzz-local-changes/
 deploy/*
+export-image/05-finalise/deploy/*
 work/*
-config
 postrun.sh
 SKIP
 SKIP_IMAGES
 .pc
 *-pc
-apt-cacher-ng/
-*.swp
+buildlogs.txt
+local-debs/

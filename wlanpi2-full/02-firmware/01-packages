@@ -1,0 +1,8 @@
+initramfs-tools
+raspi-firmware
+wlanpi-misc-firmware
+wlanpi-linux-firmware
+#linux-image-rpi-v8
+#linux-image-rpi-2712
+#linux-headers-rpi-v8
+#linux-headers-rpi-2712

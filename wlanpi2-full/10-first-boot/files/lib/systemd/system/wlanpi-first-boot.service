@@ -1,0 +1,17 @@
+[Unit]
+Description=Script executed only once at the first boot to finish image configurations
+After=local-fs.target
+Requires=local-fs.target
+ConditionPathExists=!/var/lib/first-boot-done
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/first-boot.sh
+ExecStartPre=/usr/bin/test ! -f /var/lib/first-boot-done
+ExecStartPost=/usr/bin/touch /var/lib/first-boot-done
+RemainAfterExit=yes
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

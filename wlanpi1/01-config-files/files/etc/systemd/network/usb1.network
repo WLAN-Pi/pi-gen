@@ -1,5 +1,0 @@
-[Match]
-Name=usb1
-
-[Network]
-DHCP=yes

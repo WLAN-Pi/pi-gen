@@ -1,8 +1,0 @@
-# Server and management packages
-nginx-full 
-gnupg1 
-dirmngr 
-apt-transport-https 
-tftpd-hpa 
-tftp
-chrony

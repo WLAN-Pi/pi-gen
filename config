@@ -1,6 +1,7 @@
-IMG_NAME='wlanpi'
-RELEASE='bullseye'
-DEPLOY_ZIP='1'
+IMG_NAME='wlanpi-os'
+RELEASE='trixie'
+DEPLOY_COMPRESSION='gz'
+COMPRESSION_LEVEL='9'
 LOCALE_DEFAULT='en_US.UTF-8'
 TARGET_HOSTNAME='wlanpi'
 KEYBOARD_KEYMAP='us'
@@ -9,8 +10,45 @@ TIMEZONE_DEFAULT='America/Chicago'
 FIRST_USER_NAME='wlanpi'
 FIRST_USER_PASS='wlanpi'
 WPA_COUNTRY='US'
-#WPA_ESSID=''
-#WPA_PASSWORD=''
 ENABLE_SSH='1'
-STAGE_LIST="stage0 stage1 stage2 wlanpi0 wlanpi1"
-USE_QCOW2='0'
+STAGE_LIST="wlanpi1-lite wlanpi2-full"
+DISABLE_FIRST_BOOT_USER_RENAME=1
+
+# Version configuration (CI sets these via environment variables)
+# For local builds, use date-based version if not set
+WLANPI_BASE_VERSION=${WLANPI_BASE_VERSION:-$(date '+%y.%m')}
+WLANPI_VERSION=${WLANPI_VERSION:-$(date '+%y.%m')}
+WLANPI_CODENAME=${WLANPI_CODENAME:-"Theanine"}
+WLANPI_FULL_VERSION=${WLANPI_FULL_VERSION:-"${WLANPI_VERSION}-${WLANPI_CODENAME}"}
+
+# Container-aware work directory configuration
+# Detect if we're in a container environment
+if [ -f /.dockerenv ] || [ -f /run/.containerenv ] || grep -q 'docker\|lxc\|kubepods' /proc/1/cgroup 2>/dev/null; then
+    # In container: use /tmp to avoid mount restrictions
+    WORK_DIR="/tmp/pi-gen-work"
+    echo "Container detected: using WORK_DIR=${WORK_DIR}"
+else
+    # Native build or GitHub Actions: use local work directory
+    # Leave WORK_DIR unset so build.sh can set its default
+    echo "Native/CI environment detected: using default WORK_DIR"
+fi
+
+export DEBIAN_FRONTEND=noninteractive
+
+# apt-cacher-ng proxy for faster rebuilds
+# Note: May have issues with archive.raspberrypi.com, but caches Debian repos
+# Skip APT_PROXY setup in GitHub Actions CI - runners have good network connectivity
+if [ "${GITHUB_ACTIONS}" = "true" ]; then
+    echo "GitHub Actions CI detected: skipping APT_PROXY configuration"
+    unset APT_PROXY
+elif [ -f /.dockerenv ] || [ -f /run/.containerenv ]; then
+    HOST_IP=$(ip route | grep default | awk '{print $3}')
+    if [ -n "$HOST_IP" ]; then
+        APT_PROXY="http://${HOST_IP}:3142"
+        echo "Using APT_PROXY=${APT_PROXY}"
+    fi
+else
+    # Override with APT_PROXY=<url>; set APT_PROXY= (empty) to disable.
+    APT_PROXY=${APT_PROXY-"http://localhost:3142"}
+    echo "APT_PROXY is ${APT_PROXY:-<not set>}"
+fi

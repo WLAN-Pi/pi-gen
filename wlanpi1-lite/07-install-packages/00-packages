@@ -1,0 +1,8 @@
+ufw
+nftables
+#scandump
+tcpdump
+traceroute
+mtr-tiny
+lm-sensors
+avahi-utils

@@ -1,0 +1,97 @@
+#!/bin/bash -e
+#
+# commit-current-partition - make current partition boot/root set the default
+#
+# Run this after a successful tryboot test to make the current partition permanent
+#
+# Requires: mount, blkid
+#
+# Version: v0.2
+# Author: Josh Schmelzle
+# License: BSD-3
+
+echo_status() {
+    echo -e "\e[1;34m>>> $1\e[0m"
+}
+
+echo_debug() {
+    echo -e "\e[1;36mDEBUG: $1\e[0m"
+}
+
+echo_warning() {
+    echo -e "\e[1;31mWARNING: $1\e[0m"
+}
+
+echo_error() {
+    echo -e "\e[1;31mERROR: $1\e[0m"
+    exit 1
+}
+
+if [ "$(id -u)" -ne 0 ]; then
+    echo_error "Need elevated permissions ... run as root (sudo) ..."
+fi
+
+echo_status "Starting partition commit process ..."
+
+CURRENT_ROOT=$(findmnt -n -o SOURCE /)
+CURRENT_BOOT=$(findmnt -n -o SOURCE /boot)
+echo_debug "Current root: $CURRENT_ROOT"
+echo_debug "Current boot: $CURRENT_BOOT"
+
+if [[ $CURRENT_ROOT == *"p5"* && $CURRENT_BOOT == *"p2"* ]]; then
+    echo_debug "Currently on partition set A (boot p2, root p5)"
+    CURRENT_SET="A"
+    CURRENT_BOOT_NUM=2
+    ALT_BOOT_NUM=3
+elif [[ $CURRENT_ROOT == *"p6"* && $CURRENT_BOOT == *"p3"* ]]; then
+    echo_debug "Currently on partition set B (boot p3, root p6)"
+    CURRENT_SET="B"
+    CURRENT_BOOT_NUM=3
+    ALT_BOOT_NUM=2
+else
+    echo_warning "Detected mixed partition usage!"
+    echo_debug "Root from: $CURRENT_ROOT"
+    echo_debug "Boot from: $CURRENT_BOOT"
+
+    if [[ $CURRENT_BOOT == *"p2"* ]]; then
+        CURRENT_BOOT_NUM=2
+        ALT_BOOT_NUM=3
+        echo_debug "Using boot partition 2 (set A)"
+    elif [[ $CURRENT_BOOT == *"p3"* ]]; then
+        CURRENT_BOOT_NUM=3
+        ALT_BOOT_NUM=2
+        echo_debug "Using boot partition 3 (set B)"
+    else
+        echo_error "Unable to determine boot partition number"
+    fi
+fi
+
+echo_status "Committing to current partition set ..."
+
+# Always update autoboot.txt on CONFIGFS partition (p1)
+echo_debug "Mounting CONFIGFS partition (p1) ..."
+CONFIGFS_DEV="/dev/mmcblk0p1"
+CONFIGFS_MNT=$(mktemp -d)
+mount "$CONFIGFS_DEV" "$CONFIGFS_MNT"
+
+echo_debug "Updating autoboot.txt on CONFIGFS to point to boot partition $CURRENT_BOOT_NUM ..."
+cat > "$CONFIGFS_MNT/autoboot.txt" << EOF
+[all]
+boot_partition=$CURRENT_BOOT_NUM
+tryboot_a_b=1
+EOF
+
+echo_debug "New autoboot.txt content on CONFIGFS:"
+cat "$CONFIGFS_MNT/autoboot.txt" | sed 's/^/    /'
+
+umount "$CONFIGFS_MNT"
+rmdir "$CONFIGFS_MNT"
+
+echo_status "Partition commit complete"
+echo_debug "Summary:"
+echo " - Committed partition set: $CURRENT_SET"
+echo " - Active boot partition: $CURRENT_BOOT_NUM" 
+echo " - Alternate boot partition: $ALT_BOOT_NUM"
+echo " - CONFIGFS autoboot.txt now points to partition $CURRENT_BOOT_NUM"
+echo_debug "This configuration will persist across all future reboots and power cycles"
+echo

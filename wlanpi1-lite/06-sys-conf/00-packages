@@ -1,0 +1,6 @@
+#systemd-resolved
+# wlanpi-usb-ethernet is specific to the WLAN Pi Go (USB Ethernet
+# gadget over the Go's USB-C port). It belongs only in this lite image
+# and must not be added to wlanpi2-full.
+wlanpi-usb-ethernet
+wlanpi-persistent-identity

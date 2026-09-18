@@ -1,0 +1,15 @@
+[Unit]
+Description=Set machine-id from WLAN Pi Go hardware serial number
+DefaultDependencies=no
+After=local-fs.target expand-home-partition.service
+Before=sysinit.target systemd-machine-id-commit.service
+RequiresMountsFor=/home
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/bash -c '/usr/bin/sudo -u root /usr/local/sbin/go-hw-machine-id.sh'
+TimeoutSec=30
+
+[Install]
+WantedBy=sysinit.target

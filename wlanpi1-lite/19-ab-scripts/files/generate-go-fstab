@@ -1,0 +1,449 @@
+#!/bin/bash
+#
+# Temporarily remount the root filesystem as read-write:
+# sudo mount -o remount,rw /
+#
+# generate-go-fstab.sh - automatic fstab generator for WLAN Pi Go A/B boot setup
+#
+# Detects current boot slot (A or B) and automatically generates correct
+# /etc/fstab with dynamically discovered PARTUUIDs. No hardcoded values.
+#
+# Slot A: root=p5/ROOT1FS, boot=p2/BOOT1FS, home=p7/HOME
+# Slot B: root=p6/ROOT2FS, boot=p3/BOOT2FS, home=p7/HOME
+#
+# Author: Josh Schmelzle
+# Version: 1.0
+
+# Exit on error, undefined vars, pipe failures
+set -euo pipefail
+
+if [ "$(id -u)" -ne 0 ]; then
+    echo "Error: need elevated permissions ... run as root (sudo) ..."
+    exit 1
+fi
+
+# ~~~~~~~~~~~~~
+# CONFIGURATION
+# ~~~~~~~~~~~~~
+
+LOG_FILE="/var/log/fstab-generator.log"
+FSTAB="/etc/fstab"
+BACKUP_DIR="/boot"
+
+print_header() {
+    echo ""
+    echo "╔══════════════════════════════════════════════════════════════╗"
+    echo "║            WLAN Pi Go A/B fstab Generator v1.0               ║"
+    echo "╚══════════════════════════════════════════════════════════════╝"
+    echo ""
+}
+
+print_phase() {
+    local phase="$1"
+    echo ""
+    echo "~=~ $phase ~=~"
+}
+
+print_step() {
+    local msg="$1"
+    echo "→ $msg"
+}
+
+print_success() {
+    local msg="$1"
+    echo "  ✓ $msg"
+}
+
+print_error() {
+    local msg="$1"
+    echo "  ✗ ERROR: $msg" >&2
+}
+
+print_warning() {
+    local msg="$1"
+    echo "  ⚠ WARNING: $msg"
+}
+
+log_message() {
+    local msg="$1"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $msg" | tee -a "$LOG_FILE"
+}
+
+die() {
+    local msg="$1"
+    local exit_code="${2:-1}"
+    print_error "$msg"
+    echo ""
+    log_message "FATAL: $msg"
+    exit "$exit_code"
+}
+
+get_partuuid() {
+    local device="$1"
+    sudo blkid -s PARTUUID -o value "$device" 2>/dev/null || true
+}
+
+get_label() {
+    local device="$1"
+    sudo blkid -s LABEL -o value "$device" 2>/dev/null || true
+}
+
+# ~~~~
+# MAIN
+# ~~~~
+
+print_header
+log_message "========== Starting fstab generation =========="
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# PHASE 1: DETECT BOOT CONFIGURATION
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+print_phase "Phase 1: Detecting Boot Configuration"
+
+print_step "Reading /proc/cmdline..."
+CMDLINE=$(cat /proc/cmdline)
+ROOT_PARTUUID=$(echo "$CMDLINE" | grep -oP 'root=PARTUUID=\K[^ ]+' || true)
+
+if [[ -z "$ROOT_PARTUUID" ]]; then
+    die "Could not find root=PARTUUID in /proc/cmdline" 1
+fi
+print_success "Kernel parameter: root=PARTUUID=$ROOT_PARTUUID"
+
+print_step "Querying current root mount..."
+ROOT_DEV=$(findmnt -n -o SOURCE / || true)
+
+if [[ -z "$ROOT_DEV" ]]; then
+    die "Could not determine root device from findmnt" 1
+fi
+print_success "Mounted device: $ROOT_DEV"
+
+print_step "Analyzing partition layout..."
+ROOT_NUM="${ROOT_DEV##*p}"
+
+if [[ ! "$ROOT_NUM" =~ ^[0-9]+$ ]]; then
+    die "Invalid partition number extracted: $ROOT_NUM" 1
+fi
+
+if [[ "$ROOT_NUM" == "6" ]]; then
+    SLOT="B"
+    BOOT_NUM="3"
+    print_success "Root partition: p$ROOT_NUM"
+    print_success "Boot partition: p$BOOT_NUM (calculated: p$ROOT_NUM - 3)"
+    print_success "Home partition: p7 (persistent shared)"
+    print_success "Detected SLOT B"
+elif [[ "$ROOT_NUM" == "5" ]]; then
+    SLOT="A"
+    BOOT_NUM="2"
+    print_success "Root partition: p$ROOT_NUM"
+    print_success "Boot partition: p$BOOT_NUM (calculated: p$ROOT_NUM - 3)"
+    print_success "Home partition: p7 (persistent shared)"
+    print_success "Detected SLOT A"
+else
+    die "Unexpected root partition: $ROOT_DEV (expected p5 or p6)" 1
+fi
+
+HOME_NUM="7"
+
+log_message "Detected SLOT $SLOT: root=p$ROOT_NUM, boot=p$BOOT_NUM, home=p$HOME_NUM"
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# PHASE 2: DISCOVER PARTITION UUIDs AND LABELS
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+print_phase "Phase 2: Discovering Partition PARTUUIDs and Labels"
+
+ROOT_DEVICE="/dev/mmcblk0p${ROOT_NUM}"
+BOOT_DEVICE="/dev/mmcblk0p${BOOT_NUM}"
+HOME_DEVICE="/dev/mmcblk0p${HOME_NUM}"
+
+for dev in "$ROOT_DEVICE" "$BOOT_DEVICE" "$HOME_DEVICE"; do
+    if [[ ! -b "$dev" ]]; then
+        die "Partition $dev does not exist" 1
+    fi
+done
+
+ROOT_FSTYPE=$(sudo blkid -s TYPE -o value "$ROOT_DEVICE" 2>/dev/null || echo "unknown")
+BOOT_FSTYPE=$(sudo blkid -s TYPE -o value "$BOOT_DEVICE" 2>/dev/null || echo "unknown")
+HOME_FSTYPE=$(sudo blkid -s TYPE -o value "$HOME_DEVICE" 2>/dev/null || echo "unknown")
+
+ROOT_LABEL=$(get_label "$ROOT_DEVICE")
+HOME_LABEL=$(get_label "$HOME_DEVICE")
+
+# Validate labels match expected slot (boot labels skipped due to FAT geometry issues)
+if [[ "$SLOT" == "A" ]]; then
+    if [[ "$ROOT_LABEL" != "ROOT1FS" ]]; then
+        print_warning "Root partition label is '$ROOT_LABEL' but expected 'ROOT1FS' for Slot A"
+    fi
+else
+    if [[ "$ROOT_LABEL" != "ROOT2FS" ]]; then
+        print_warning "Root partition label is '$ROOT_LABEL' but expected 'ROOT2FS' for Slot B"
+    fi
+fi
+if [[ "$HOME_LABEL" != "HOME" ]]; then
+    print_warning "Home partition label is '$HOME_LABEL' but expected 'HOME'"
+fi
+
+print_step "Querying PARTUUID for $ROOT_DEVICE (root - $ROOT_FSTYPE - $ROOT_LABEL)..."
+ROOT_PARTUUID=$(get_partuuid "$ROOT_DEVICE")
+if [[ -z "$ROOT_PARTUUID" ]]; then
+    echo ""
+    print_error "Could not find PARTUUID for $ROOT_DEVICE"
+    echo ""
+    echo "Troubleshooting:"
+    echo "  1. Check if partition exists:"
+    echo "     \$ ls -l $ROOT_DEVICE"
+    echo ""
+    echo "  2. Check partition info:"
+    echo "     \$ sudo blkid $ROOT_DEVICE"
+    echo ""
+    echo "  3. Refresh partition table:"
+    echo "     \$ sudo partprobe /dev/mmcblk0"
+    echo ""
+    die "Missing PARTUUID for root partition" 2
+fi
+print_success "Found: $ROOT_PARTUUID"
+
+print_step "Querying PARTUUID for $BOOT_DEVICE (boot - $BOOT_FSTYPE)..."
+BOOT_PARTUUID=$(get_partuuid "$BOOT_DEVICE")
+if [[ -z "$BOOT_PARTUUID" ]]; then
+    echo ""
+    print_error "Could not find PARTUUID for $BOOT_DEVICE"
+    echo ""
+    echo "Troubleshooting:"
+    echo "  1. Check if partition exists:"
+    echo "     \$ ls -l $BOOT_DEVICE"
+    echo ""
+    echo "  2. Check partition info:"
+    echo "     \$ sudo blkid $BOOT_DEVICE"
+    echo ""
+    echo "  3. Refresh partition table:"
+    echo "     \$ sudo partprobe /dev/mmcblk0"
+    echo ""
+    die "Missing PARTUUID for boot partition" 2
+fi
+print_success "Found: $BOOT_PARTUUID"
+
+print_step "Querying PARTUUID for $HOME_DEVICE (home - $HOME_FSTYPE - $HOME_LABEL)..."
+HOME_PARTUUID=$(get_partuuid "$HOME_DEVICE")
+if [[ -z "$HOME_PARTUUID" ]]; then
+    echo ""
+    print_error "Could not find PARTUUID for $HOME_DEVICE"
+    echo ""
+    echo "Troubleshooting:"
+    echo "  1. Check if partition exists:"
+    echo "     \$ ls -l $HOME_DEVICE"
+    echo ""
+    echo "  2. Check partition info:"
+    echo "     \$ sudo blkid $HOME_DEVICE"
+    echo ""
+    echo "  3. Refresh partition table:"
+    echo "     \$ sudo partprobe /dev/mmcblk0"
+    echo ""
+    die "Missing PARTUUID for home partition" 2
+fi
+print_success "Found: $HOME_PARTUUID"
+
+log_message "PARTUUIDs discovered: root=$ROOT_PARTUUID, boot=$BOOT_PARTUUID, home=$HOME_PARTUUID"
+log_message "Labels discovered: root=$ROOT_LABEL, home=$HOME_LABEL"
+
+# ~~~~~~~~~~~~~~~~~~~~~~~
+# PHASE 3: GENERATE FSTAB
+# ~~~~~~~~~~~~~~~~~~~~~~~
+
+print_phase "Phase 3: Generating fstab"
+
+print_step "Building fstab structure..."
+TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
+TEMP_FSTAB=$(mktemp)
+
+cat > "$TEMP_FSTAB" << FSTAB_END
+# /etc/fstab: static file system information
+# Auto-generated by generate-go-fstab.sh on $TIMESTAMP
+# Current slot: $SLOT (root=p$ROOT_NUM/${ROOT_LABEL:-unknown}, boot=p$BOOT_NUM, home=p$HOME_NUM/${HOME_LABEL:-unknown})
+#
+# <file system>                             <mount point>  <type>  <options>         <dump>  <pass>
+
+# Root filesystem (mmcblk0p$ROOT_NUM - ${ROOT_LABEL:-unknown} - SLOT $SLOT)
+PARTUUID=$ROOT_PARTUUID   /              $ROOT_FSTYPE    defaults,noatime  0       1
+
+# Boot partition (mmcblk0p$BOOT_NUM - SLOT $SLOT)
+PARTUUID=$BOOT_PARTUUID   /boot          $BOOT_FSTYPE    defaults          0       2
+
+# Home partition (mmcblk0p$HOME_NUM - ${HOME_LABEL:-unknown} - shared across slots)
+PARTUUID=$HOME_PARTUUID   /home          $HOME_FSTYPE    defaults,noatime  0       2
+FSTAB_END
+
+print_success "Added root entry (p$ROOT_NUM)"
+print_success "Added boot entry (p$BOOT_NUM)"
+print_success "Added home entry (p$HOME_NUM)"
+print_step "Writing to temporary file..."
+print_success "$TEMP_FSTAB created"
+
+log_message "Generated fstab with 3 entries"
+
+# ~~~~~~~~~~~~~~~~~~~~~
+# PHASE 4: INSTALLATION
+# ~~~~~~~~~~~~~~~~~~~~~
+
+print_phase "Phase 4: Installation"
+
+print_step "Checking root filesystem mount status..."
+if mount | grep -q "on / .*ro[,)]"; then
+    print_warning "Root filesystem is read-only, remounting as read-write..."
+    if sudo mount -o remount,rw /; then
+        print_success "Remounted / as rw"
+        log_message "Remounted root filesystem as read-write"
+    else
+        rm "$TEMP_FSTAB"
+        die "Failed to remount / as read-write" 3
+    fi
+else
+    print_success "Root filesystem is already read-write"
+fi
+
+# Backup existing fstab if it exists and has content
+if [[ -s "$FSTAB" ]]; then
+    print_step "Backing up existing fstab..."
+    BACKUP_NAME="fstab.backup.$(date +%s)"
+    if sudo cp "$FSTAB" "$BACKUP_DIR/$BACKUP_NAME"; then
+        print_success "Saved to $BACKUP_DIR/$BACKUP_NAME"
+        log_message "Backed up existing fstab to $BACKUP_DIR/$BACKUP_NAME"
+    else
+        print_warning "Could not create timestamped backup (continuing anyway)"
+    fi
+fi
+
+print_step "Installing new fstab..."
+if sudo cp "$TEMP_FSTAB" "$FSTAB"; then
+    print_success "Copied to $FSTAB"
+    log_message "Installed new fstab to $FSTAB"
+else
+    rm "$TEMP_FSTAB"
+    die "Failed to install fstab to $FSTAB" 3
+fi
+
+if sudo chmod 644 "$FSTAB"; then
+    print_success "Set permissions (644)"
+else
+    print_warning "Could not set fstab permissions (may cause issues)"
+fi
+
+print_step "Creating additional backups..."
+if sudo cp "$FSTAB" "$BACKUP_DIR/fstab.backup"; then
+    print_success "$BACKUP_DIR/fstab.backup"
+else
+    print_warning "Could not create $BACKUP_DIR/fstab.backup"
+fi
+
+if sudo cp "$FSTAB" "/etc/fstab.permanent"; then
+    print_success "/etc/fstab.permanent"
+else
+    print_warning "Could not create /etc/fstab.permanent"
+fi
+
+rm "$TEMP_FSTAB"
+
+print_step "Validating fstab syntax..."
+
+if mount --help 2>&1 | grep -q -- '--fake'; then
+    if sudo mount -a --fake 2>&1 | grep -i error; then
+        die "fstab validation failed (mount -a --fake reported errors)" 3
+    else
+        print_success "mount -a --fake passed"
+    fi
+else
+    print_success "Skipped validation (mount version doesn't support --fake)"
+fi
+
+# ~~~~~~~~~~~~~~
+# PHASE 5: MOUNT
+# ~~~~~~~~~~~~~~
+
+print_phase "Phase 5: Mount"
+
+MOUNT_FAILED=false
+
+print_step "Mounting /boot (PARTUUID=$BOOT_PARTUUID)..."
+if mount | grep -q " /boot "; then
+    print_success "/boot already mounted"
+    log_message "/boot already mounted"
+elif sudo mount /boot 2>&1 | tee -a "$LOG_FILE"; then
+    print_success "/boot mounted successfully"
+    log_message "Mounted /boot successfully"
+else
+    print_error "Failed to mount /boot"
+    log_message "ERROR: Failed to mount /boot"
+    MOUNT_FAILED=true
+fi
+
+print_step "Mounting /home (PARTUUID=$HOME_PARTUUID)..."
+if mount | grep -q " /home "; then
+    print_success "/home already mounted"
+    log_message "/home already mounted"
+elif sudo mount /home 2>&1 | tee -a "$LOG_FILE"; then
+    print_success "/home mounted successfully"
+    log_message "Mounted /home successfully"
+else
+    print_error "Failed to mount /home"
+    log_message "ERROR: Failed to mount /home"
+    MOUNT_FAILED=true
+fi
+
+if [[ "$MOUNT_FAILED" == "true" ]]; then
+    echo ""
+    print_error "One or more partitions failed to mount"
+    echo ""
+    echo "fstab has been generated but mounting failed."
+    echo "Check the errors above and try mounting manually:"
+    echo "  \$ sudo mount /boot"
+    echo "  \$ sudo mount /home"
+    echo ""
+    die "Mounting failed" 3
+fi
+
+# ~~~~~~~~~~
+# TPS REPORT
+# ~~~~~~~~~~
+
+print_phase "Summary"
+
+echo "✓ fstab generated successfully for SLOT $SLOT"
+echo ""
+echo "Partition Configuration:"
+echo "  Root: $ROOT_DEVICE → /"
+echo "        PARTUUID: $ROOT_PARTUUID"
+echo "        Label: ${ROOT_LABEL:-unknown}"
+echo "        Type: $ROOT_FSTYPE"
+echo ""
+echo "  Boot: $BOOT_DEVICE → /boot"
+echo "        PARTUUID: $BOOT_PARTUUID"
+echo "        Type: $BOOT_FSTYPE"
+echo ""
+echo "  Home: $HOME_DEVICE → /home"
+echo "        PARTUUID: $HOME_PARTUUID"
+echo "        Label: ${HOME_LABEL:-unknown}"
+echo "        Type: $HOME_FSTYPE"
+echo ""
+
+echo "Backups Created:"
+echo "  • $BACKUP_DIR/fstab.backup (latest)"
+if [[ -n "${BACKUP_NAME:-}" ]]; then
+    echo "  • $BACKUP_DIR/$BACKUP_NAME (timestamped)"
+fi
+echo "  • /etc/fstab.permanent"
+echo ""
+
+echo "Current Mount Status:"
+df -h | grep -E '(Filesystem|mmcblk0)' || true
+echo ""
+
+echo "Log file: $LOG_FILE"
+echo ""
+
+echo "╔══════════════════════════════════════════════════════════════╗"
+echo "║         All operations completed successfully!               ║"
+echo "╚══════════════════════════════════════════════════════════════╝"
+echo ""
+
+exit 0

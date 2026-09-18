@@ -1,0 +1,2 @@
+Acquire::http { Proxy "APT_PROXY"; };
+Acquire::http::Proxy::archive.raspberrypi.com "DIRECT";

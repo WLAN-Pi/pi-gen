@@ -1,0 +1,1 @@
+wlanpi ALL = (root) NOPASSWD: /usr/sbin/iwconfig, /usr/sbin/iw, /usr/sbin/dhclient, /usr/sbin/ifconfig, /usr/sbin/reboot, /usr/bin/kill, /usr/bin/date, /usr/sbin/ifdown, /usr/sbin/ifup, /usr/bin/ip, /usr/sbin/ip, /usr/bin/tcpdump, /usr/bin/dumpcap, /usr/sbin/wpa_cli

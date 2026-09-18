@@ -1,0 +1,15 @@
+bind9-dnsutils
+firmware-atheros
+firmware-brcm80211
+firmware-misc-nonfree
+firmware-realtek
+iperf
+iperf3
+iputils-arping
+iw
+netbase
+net-tools
+raspberrypi-net-mods
+wavemon
+wireless-tools
+wpasupplicant

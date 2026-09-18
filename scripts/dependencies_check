@@ -10,7 +10,7 @@ dependencies_check()
 
 	for depfile in "$@"; do
 		if [[ -e "$depfile" ]]; then
-			deps="$(sed -f "${SCRIPT_DIR}/remove-comments.sed" < "${BASE_DIR}/depends")"
+			deps="$(sed -f "${SCRIPT_DIR}/remove-comments.sed" < "$depfile")"
 
 		fi
 		for dep in $deps; do
@@ -23,8 +23,18 @@ dependencies_check()
 	if [[ "$missing" ]]; then
 		echo "Required dependencies not installed"
 		echo
-		echo "This can be resolved on Debian/Raspbian systems by installing:"
-		echo "$missing"
+		# Map Debian package names to Fedora equivalents
+		install_deps="$missing"
+		if [ -f /etc/fedora-release ] || grep -qE "ID_LIKE=.*fedora" /etc/os-release 2>/dev/null; then
+			install_deps="$(echo "$install_deps" | sed 's/libarchive-tools/bsdtar/g; s/libcap2-bin/libcap/g; s/xz-utils/xz/g')"
+			echo "On Fedora, install with:"
+			echo "  sudo dnf install $install_deps"
+			echo ""
+			echo "On Debian/Raspbian, install with:"
+		else
+			echo "This can be resolved on Debian/Raspbian systems by installing:"
+		fi
+		echo "  sudo apt-get install $missing"
 		false
 	fi
 

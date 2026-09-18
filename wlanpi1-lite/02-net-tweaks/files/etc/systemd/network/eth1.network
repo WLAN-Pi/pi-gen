@@ -1,0 +1,15 @@
+[Match]
+Name=eth1
+
+[Network]
+DHCP=ipv4
+LinkLocalAddressing=no
+IPv6AcceptRA=no
+
+[DHCP]
+UseDNS=yes
+UseRoutes=yes
+UseMTU=yes
+SendHostname=yes
+UseHostname=no
+ClientIdentifier=mac

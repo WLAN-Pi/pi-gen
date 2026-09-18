@@ -21,13 +21,8 @@ EOF
 			PACKAGES="$(sed -f "${SCRIPT_DIR}/remove-comments.sed" < "${i}-packages-nr")"
 			if [ -n "$PACKAGES" ]; then
 				on_chroot << EOF
-DEBIAN_FRONTEND=noninteractive apt-get -o APT::Acquire::Retries=3 install --no-install-recommends -y $PACKAGES
+apt-get -o Acquire::Retries=3 install --no-install-recommends -y $PACKAGES
 EOF
-				if [ "${USE_QCOW2}" = "1" ]; then
-					on_chroot << EOF
-apt-get clean
-EOF
-				fi
 			fi
 			log "End ${SUB_STAGE_DIR}/${i}-packages-nr"
 		fi
@@ -36,13 +31,8 @@ EOF
 			PACKAGES="$(sed -f "${SCRIPT_DIR}/remove-comments.sed" < "${i}-packages")"
 			if [ -n "$PACKAGES" ]; then
 				on_chroot << EOF
-DEBIAN_FRONTEND=noninteractive apt-get -o APT::Acquire::Retries=3 install -y $PACKAGES
+apt-get -o Acquire::Retries=3 install -y $PACKAGES
 EOF
-				if [ "${USE_QCOW2}" = "1" ]; then
-					on_chroot << EOF
-apt-get clean
-EOF
-				fi
 			fi
 			log "End ${SUB_STAGE_DIR}/${i}-packages"
 		fi
@@ -78,6 +68,8 @@ EOF
 			log "Begin ${SUB_STAGE_DIR}/${i}-run.sh"
 			./${i}-run.sh
 			log "End ${SUB_STAGE_DIR}/${i}-run.sh"
+		elif [ -f ${i}-run.sh ]; then
+			log "Skip ${SUB_STAGE_DIR}/${i}-run.sh (not executable)"
 		fi
 		if [ -f ${i}-run-chroot.sh ]; then
 			log "Begin ${SUB_STAGE_DIR}/${i}-run-chroot.sh"
@@ -99,16 +91,7 @@ run_stage(){
 	STAGE_WORK_DIR="${WORK_DIR}/${STAGE}"
 	ROOTFS_DIR="${STAGE_WORK_DIR}"/rootfs
 
-	if [ "${USE_QCOW2}" = "1" ]; then
-		if [ ! -f SKIP ]; then
-			load_qimage
-		fi
-	else
-		# make sure we are not umounting during export-image stage
-		if [ "${USE_QCOW2}" = "0" ] && [ "${NO_PRERUN_QCOW2}" = "0" ]; then
-			unmount "${WORK_DIR}/${STAGE}"
-		fi
-	fi
+	unmount "${WORK_DIR}/${STAGE}"
 
 	if [ ! -f SKIP_IMAGES ]; then
 		if [ -f "${STAGE_DIR}/EXPORT_IMAGE" ]; then
@@ -116,7 +99,7 @@ run_stage(){
 		fi
 	fi
 	if [ ! -f SKIP ]; then
-		if [ "${CLEAN}" = "1" ] && [ "${USE_QCOW2}" = "0" ] ; then
+		if [ "${CLEAN}" = "1" ]; then
 			if [ -d "${ROOTFS_DIR}" ]; then
 				rm -rf "${ROOTFS_DIR}"
 			fi
@@ -133,20 +116,44 @@ run_stage(){
 		done
 	fi
 
-	if [ "${USE_QCOW2}" = "1" ]; then
-		unload_qimage
-	else
-		# make sure we are not umounting during export-image stage
-		if [ "${USE_QCOW2}" = "0" ] && [ "${NO_PRERUN_QCOW2}" = "0" ]; then
-			unmount "${WORK_DIR}/${STAGE}"
-		fi
-	fi
+	unmount "${WORK_DIR}/${STAGE}"
 
 	PREV_STAGE="${STAGE}"
 	PREV_STAGE_DIR="${STAGE_DIR}"
 	PREV_ROOTFS_DIR="${ROOTFS_DIR}"
 	popd > /dev/null
 	log "End ${STAGE_DIR}"
+}
+
+term() {
+	if [ "$?" -ne 0 ]; then
+		BUILD_FAIL_TIME=$(date +%s)
+		BUILD_FAIL_TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S %Z')
+		if [ -n "${BUILD_START_TIME}" ]; then
+			BUILD_FAIL_DURATION=$((BUILD_FAIL_TIME - BUILD_START_TIME))
+			BUILD_FAIL_FORMATTED=$(printf '%02d:%02d:%02d' $((BUILD_FAIL_DURATION/3600)) $((BUILD_FAIL_DURATION%3600/60)) $((BUILD_FAIL_DURATION%60)))
+			log "Build failed at: ${BUILD_FAIL_TIMESTAMP} (after ${BUILD_FAIL_FORMATTED})"
+			echo ""
+			echo "========================================"
+			echo "Build FAILED"
+			echo "========================================"
+			echo "Started:  ${BUILD_START_TIMESTAMP}"
+			echo "Failed:   ${BUILD_FAIL_TIMESTAMP}"
+			echo "Duration: ${BUILD_FAIL_FORMATTED}"
+			echo "========================================"
+			echo ""
+		else
+			log "Build failed"
+		fi
+	else
+		log "Build finished"
+	fi
+	unmount "${STAGE_WORK_DIR}"
+	if [ "$STAGE" = "export-image" ]; then
+		for img in "${STAGE_WORK_DIR}/"*.img; do
+			unmount_image "$img"
+		done
+	fi
 }
 
 if [ "$(id -u)" != "0" ]; then
@@ -170,7 +177,7 @@ if [ -f config ]; then
 	source config
 fi
 
-while getopts "c:v:" flag
+while getopts "c:" flag
 do
 	case "$flag" in
 		c)
@@ -183,52 +190,81 @@ do
 	esac
 done
 
-term() {
-	if [ "${USE_QCOW2}" = "1" ]; then
-		log "Unloading image"
-		unload_qimage
-	fi
-}
+export PI_GEN=${PI_GEN:-pi-gen-bookworm}
+export PI_GEN_REPO=${PI_GEN_REPO:-https://github.com/WLAN-Pi/pi-gen-bookworm/}
+export PI_GEN_RELEASE=${PI_GEN_RELEASE:-WLAN Pi}
 
-trap term EXIT INT TERM
+export ARCH=arm64
+export RELEASE=${RELEASE:-trixie} # Don't forget to update stage0/prerun.sh
+export IMG_NAME="${IMG_NAME:-wlanpi-os-$RELEASE-$ARCH}"
 
-export PI_GEN=${PI_GEN:-pi-gen}
-export PI_GEN_REPO=${PI_GEN_REPO:-https://github.com/RPi-Distro/pi-gen}
+export WLANPI_BASE_VERSION=${WLANPI_BASE_VERSION:-$(date '+%y.%m')}
+export WLANPI_VERSION=${WLANPI_VERSION:-$(date '+%y.%m')}
+export WLANPI_CODENAME=${WLANPI_CODENAME:-"theanine"}
+export WLANPI_FULL_VERSION=${WLANPI_FULL_VERSION:-"${WLANPI_VERSION}-${WLANPI_CODENAME}"}
+export IMG_FILENAME="${IMG_NAME}-${WLANPI_FULL_VERSION}"
+export ARCHIVE_FILENAME="${ARCHIVE_FILENAME:-${IMG_FILENAME}}"
+export WLANPI_HOME_URL="https://wlanpi.com"
+export WLANPI_SUPPORT_URL="https://github.com/orgs/WLAN-Pi/discussions"
+export WLANPI_BUG_REPORT_URL="https://github.com/WLAN-Pi"
+export IMG_DATE="${IMG_DATE:-"$(date +%Y%m%d-%H%M%S)"}"
+export INCLUDE_PACKAGECLOUD_DEV=${INCLUDE_PACKAGECLOUD_DEV:-1}
+export SKIP_FULL_IMAGE=${SKIP_FULL_IMAGE:-false}
 
-if [ -z "${IMG_NAME}" ]; then
-	echo "IMG_NAME not set" 1>&2
-	exit 1
+echo "=== BUILD VARS ==="
+echo "WLANPI_BASE_VERSION is ${WLANPI_BASE_VERSION}"
+echo "WLANPI_VERSION is ${WLANPI_VERSION}"
+echo "WLANPI_CODENAME is ${WLANPI_CODENAME}"
+echo "WLANPI_FULL_VERSION is ${WLANPI_FULL_VERSION}"
+echo "RELEASE is ${RELEASE}"
+echo "ARCH is ${ARCH}"
+echo "IMG_NAME is ${IMG_NAME}"
+echo "IMG_FILENAME is ${IMG_FILENAME}"
+echo "ARCHIVE_FILENAME is ${ARCHIVE_FILENAME}"
+echo "DEPLOY_COMPRESSION is ${DEPLOY_COMPRESSION}"
+echo "COMPRESSION_LEVEL is ${COMPRESSION_LEVEL}"
+echo "WORK_DIR is ${WORK_DIR}"
+echo "DEPLOY_DIR is ${DEPLOY_DIR}"
+echo "APT_PROXY is ${APT_PROXY:-<not set>}"
+echo "STAGE_LIST is ${STAGE_LIST}"
+echo "SKIP_FULL_IMAGE is ${SKIP_FULL_IMAGE}"
+echo "INCLUDE_PACKAGECLOUD_DEV is ${INCLUDE_PACKAGECLOUD_DEV}"
+echo "IMG_DATE is ${IMG_DATE}"
+echo "WLANPI_HOME_URL is ${WLANPI_HOME_URL}"
+echo "WLANPI_SUPPORT_URL is ${WLANPI_SUPPORT_URL}"
+echo "WLANPI_BUG_REPORT_URL is ${WLANPI_BUG_REPORT_URL}"
+echo "=== /BUILD VARS ==="
+
+# Validation checks
+if [ -z "${ARCHIVE_FILENAME}" ]; then
+	echo "WARNING: ARCHIVE_FILENAME is empty, output files may have broken names!"
 fi
 
-export SCRIPT_DIR="${BASE_DIR}/scripts"
-
-export LAST_VERSION=${LAST_VERSION:-"$(git tag -l 'v[0-9]*[.][0-9]*[.][0-9]*' | sort -V | tail -n1)"}
-export LAST_VERSION_HASH=${LAST_VERSION_HASH:-"$(git rev-parse "${LAST_VERSION}")"}
-export GIT_HASH=${GIT_HASH:-"$(git rev-parse HEAD)"}
-export COMMITS_FROM_LAST=${COMMITS_FROM_LAST:-"$(git log --oneline "${LAST_VERSION}"..${GIT_HASH})"}
-
-export VERSION_BUMP=${REQUEST_BUMP:-auto}
-NEW_VERSION_OUTPUT=$(source "${SCRIPT_DIR}/update_version.sh" "${VERSION_BUMP}")
-export NEW_VERSION=$(echo "$NEW_VERSION_OUTPUT" | tail -n1)
-echo "NEW_VERSION is ${NEW_VERSION}"
-
 export USE_QEMU="${USE_QEMU:-0}"
-export IMG_DATE="${IMG_DATE:-"$(date +%Y-%m-%d)"}"
-export IMG_FILENAME="${IMG_FILENAME:-"${NEW_VERSION}-${IMG_DATE}-${IMG_NAME}"}"
-export ZIP_FILENAME="${ZIP_FILENAME:-"image_${NEW_VERSION}-${IMG_DATE}-${IMG_NAME}"}"
-
+export SCRIPT_DIR="${BASE_DIR}/scripts"
 export WORK_DIR="${WORK_DIR:-"${BASE_DIR}/work/${IMG_NAME}"}"
 export DEPLOY_DIR=${DEPLOY_DIR:-"${BASE_DIR}/deploy"}
-export DEPLOY_ZIP="${DEPLOY_ZIP:-1}"
+
+echo "Builds are incremental: stage state persists in ${WORK_DIR} and re-runs reuse it."
+echo "If a stage edit appears to do nothing, remove ${WORK_DIR} (or use SKIP files) to force a rebuild."
+
+# DEPLOY_ZIP was deprecated in favor of DEPLOY_COMPRESSION
+# This preserve the old behavior with DEPLOY_ZIP=0 where no archive was created
+if [ -z "${DEPLOY_COMPRESSION}" ] && [ "${DEPLOY_ZIP:-1}" = "0" ]; then
+	echo "DEPLOY_ZIP has been deprecated in favor of DEPLOY_COMPRESSION"
+	echo "Similar behavior to DEPLOY_ZIP=0 can be obtained with DEPLOY_COMPRESSION=none"
+	echo "Please update your config file"
+	DEPLOY_COMPRESSION=none
+fi
+export DEPLOY_COMPRESSION=${DEPLOY_COMPRESSION:-zip}
+export COMPRESSION_LEVEL=${COMPRESSION_LEVEL:-6}
 export LOG_FILE="${WORK_DIR}/build.log"
 
-export TARGET_HOSTNAME=${TARGET_HOSTNAME:-raspberrypi}
+export TARGET_HOSTNAME=${TARGET_HOSTNAME:-wlanpi}
 
-export FIRST_USER_NAME=${FIRST_USER_NAME:-pi}
-export FIRST_USER_PASS=${FIRST_USER_PASS:-raspberry}
-export RELEASE=${RELEASE:-bullseye}
-export WPA_ESSID
-export WPA_PASSWORD
+export FIRST_USER_NAME=${FIRST_USER_NAME:-wlanpi}
+export FIRST_USER_PASS
+export DISABLE_FIRST_BOOT_USER_RENAME=${DISABLE_FIRST_BOOT_USER_RENAME:-0}
 export WPA_COUNTRY
 export ENABLE_SSH="${ENABLE_SSH:-0}"
 export PUBKEY_ONLY_SSH="${PUBKEY_ONLY_SSH:-0}"
@@ -240,10 +276,11 @@ export KEYBOARD_LAYOUT="${KEYBOARD_LAYOUT:-English (UK)}"
 
 export TIMEZONE_DEFAULT="${TIMEZONE_DEFAULT:-Europe/London}"
 
+export GIT_HASH=${GIT_HASH:-"$(git rev-parse HEAD)"}
+
 export PUBKEY_SSH_FIRST_USER
 
 export CLEAN
-export IMG_NAME
 export APT_PROXY
 
 export STAGE
@@ -269,19 +306,21 @@ source "${SCRIPT_DIR}/common"
 # shellcheck source=scripts/dependencies_check
 source "${SCRIPT_DIR}/dependencies_check"
 
-export NO_PRERUN_QCOW2="${NO_PRERUN_QCOW2:-1}"
-export USE_QCOW2="${USE_QCOW2:-0}"
-export BASE_QCOW2_SIZE=${BASE_QCOW2_SIZE:-12G}
-source "${SCRIPT_DIR}/qcow2_handling"
-if [ "${USE_QCOW2}" = "1" ]; then
-	NO_PRERUN_QCOW2=1
-else
-	NO_PRERUN_QCOW2=0
+if [ "$SETFCAP" != "1" ]; then
+	export CAPSH_ARG="--drop=cap_setfcap"
 fi
 
-export NO_PRERUN_QCOW2="${NO_PRERUN_QCOW2:-1}"
+mkdir -p "${WORK_DIR}"
+trap term EXIT INT TERM
 
-dependencies_check "${BASE_DIR}/depends"
+dependencies_check "${BASE_DIR}/depends-arm64"
+
+echo "Verifying native arm64 support..."
+if ! arch-test -n arm64; then
+	echo "ERROR: Native arm64 execution is not supported on this system."
+	echo "This script requires a native arm64 host."
+	exit 1
+fi
 
 #check username is valid
 if [[ ! "$FIRST_USER_NAME" =~ ^[a-z][-a-z0-9_]*$ ]]; then
@@ -289,8 +328,20 @@ if [[ ! "$FIRST_USER_NAME" =~ ^[a-z][-a-z0-9_]*$ ]]; then
 	exit 1
 fi
 
+if [[ "$DISABLE_FIRST_BOOT_USER_RENAME" == "1" ]] && [ -z "${FIRST_USER_PASS}" ]; then
+	echo "To disable user rename on first boot, FIRST_USER_PASS needs to be set"
+	echo "Not setting FIRST_USER_PASS makes your system vulnerable and open to cyberattacks"
+	exit 1
+fi
+
+if [[ "$DISABLE_FIRST_BOOT_USER_RENAME" == "1" ]]; then
+	echo "User rename on the first boot is disabled"
+	echo "Be advised of the security risks linked to shipping a device with default username/password set."
+fi
+
 if [[ -n "${APT_PROXY}" ]] && ! curl --silent "${APT_PROXY}" >/dev/null ; then
 	echo "Could not reach APT_PROXY server: ${APT_PROXY}"
+	echo "Start apt-cacher-ng, or unset APT_PROXY and try again."
 	exit 1
 fi
 
@@ -304,10 +355,30 @@ if [[ "${PUBKEY_ONLY_SSH}" = "1" && -z "${PUBKEY_SSH_FIRST_USER}" ]]; then
 	exit 1
 fi
 
-mkdir -p "${WORK_DIR}"
+BUILD_START_TIME=$(date +%s)
+BUILD_START_TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S %Z')
 log "Begin ${BASE_DIR}"
+log "Build started at: ${BUILD_START_TIMESTAMP}"
 
 STAGE_LIST=${STAGE_LIST:-${BASE_DIR}/stage*}
+if [ "$SKIP_FULL_IMAGE" = "true" ]; then
+    FILTERED_STAGE_LIST=""
+    for stage in ${STAGE_LIST}; do
+        if [[ "$stage" != *"wlanpi2-full"* ]]; then
+            [ -n "$FILTERED_STAGE_LIST" ] && FILTERED_STAGE_LIST+=" "
+            FILTERED_STAGE_LIST+="$stage"
+        fi
+    done
+    STAGE_LIST="$FILTERED_STAGE_LIST"
+fi
+export STAGE_LIST
+
+EXPORT_CONFIG_DIR=$(realpath "${EXPORT_CONFIG_DIR:-"${BASE_DIR}/export-image"}")
+if [ ! -d "${EXPORT_CONFIG_DIR}" ]; then
+	echo "EXPORT_CONFIG_DIR invalid: ${EXPORT_CONFIG_DIR} does not exist"
+	exit 1
+fi
+export EXPORT_CONFIG_DIR
 
 for STAGE_DIR in $STAGE_LIST; do
 	STAGE_DIR=$(realpath "${STAGE_DIR}")
@@ -316,102 +387,41 @@ done
 
 CLEAN=1
 for EXPORT_DIR in ${EXPORT_DIRS}; do
-	STAGE_DIR=${BASE_DIR}/export-image
+	STAGE_DIR=${EXPORT_CONFIG_DIR}
 	# shellcheck source=/dev/null
 	source "${EXPORT_DIR}/EXPORT_IMAGE"
 	EXPORT_ROOTFS_DIR=${WORK_DIR}/$(basename "${EXPORT_DIR}")/rootfs
-	if [ "${USE_QCOW2}" = "1" ]; then
-		USE_QCOW2=0
-		EXPORT_NAME="${IMG_FILENAME}${IMG_SUFFIX}"
-		echo "------------------------------------------------------------------------"
-		echo "Running export stage for ${EXPORT_NAME}"
-		rm -f "${WORK_DIR}/export-image/${EXPORT_NAME}.img" || true
-		rm -f "${WORK_DIR}/export-image/${EXPORT_NAME}.qcow2" || true
-		rm -f "${WORK_DIR}/${EXPORT_NAME}.img" || true
-		rm -f "${WORK_DIR}/${EXPORT_NAME}.qcow2" || true
-		EXPORT_STAGE=$(basename "${EXPORT_DIR}")
-		for s in $STAGE_LIST; do
-			TMP_LIST=${TMP_LIST:+$TMP_LIST }$(basename "${s}")
-		done
-		FIRST_STAGE=${TMP_LIST%% *}
-		FIRST_IMAGE="image-${FIRST_STAGE}.qcow2"
-
-		pushd "${WORK_DIR}" > /dev/null
-		echo "Creating new base "${EXPORT_NAME}.qcow2" from ${FIRST_IMAGE}"
-		cp "./${FIRST_IMAGE}" "${EXPORT_NAME}.qcow2"
-
-		ARR=($TMP_LIST)
-		# rebase stage images to new export base
-		for CURR_STAGE in "${ARR[@]}"; do
-			if [ "${CURR_STAGE}" = "${FIRST_STAGE}" ]; then
-				PREV_IMG="${EXPORT_NAME}"
-				continue
-			fi
-		echo "Rebasing image-${CURR_STAGE}.qcow2 onto ${PREV_IMG}.qcow2"
-			qemu-img rebase -f qcow2 -u -b ${PREV_IMG}.qcow2 image-${CURR_STAGE}.qcow2
-			if [ "${CURR_STAGE}" = "${EXPORT_STAGE}" ]; then
-				break
-			fi
-			PREV_IMG="image-${CURR_STAGE}"
-		done
-
-		# commit current export stage into base export image
-		echo "Committing image-${EXPORT_STAGE}.qcow2 to ${EXPORT_NAME}.qcow2"
-		qemu-img commit -f qcow2 -p -b "${EXPORT_NAME}.qcow2" image-${EXPORT_STAGE}.qcow2
-
-		# rebase stage images back to original first stage for easy re-run
-		for CURR_STAGE in "${ARR[@]}"; do
-			if [ "${CURR_STAGE}" = "${FIRST_STAGE}" ]; then
-				PREV_IMG="image-${CURR_STAGE}"
-				continue
-			fi
-		echo "Rebasing back image-${CURR_STAGE}.qcow2 onto ${PREV_IMG}.qcow2"
-			qemu-img rebase -f qcow2 -u -b ${PREV_IMG}.qcow2 image-${CURR_STAGE}.qcow2
-			if [ "${CURR_STAGE}" = "${EXPORT_STAGE}" ]; then
-				break
-			fi
-			PREV_IMG="image-${CURR_STAGE}"
-		done
-		popd > /dev/null
-
-		mkdir -p "${WORK_DIR}/export-image/rootfs"
-		mv "${WORK_DIR}/${EXPORT_NAME}.qcow2" "${WORK_DIR}/export-image/"
-		echo "Mounting image ${WORK_DIR}/export-image/${EXPORT_NAME}.qcow2 to rootfs ${WORK_DIR}/export-image/rootfs"
-		mount_qimage "${WORK_DIR}/export-image/${EXPORT_NAME}.qcow2" "${WORK_DIR}/export-image/rootfs"
-
-		CLEAN=0
+	run_stage
+	if [ -e "${EXPORT_DIR}/EXPORT_NOOBS" ]; then
+		# shellcheck source=/dev/null
+		source "${EXPORT_DIR}/EXPORT_NOOBS"
+		STAGE_DIR="${BASE_DIR}/export-noobs"
 		run_stage
-		CLEAN=1
-		USE_QCOW2=1
-
-	else
-		run_stage
-	fi
-	if [ "${USE_QEMU}" != "1" ]; then
-		if [ -e "${EXPORT_DIR}/EXPORT_NOOBS" ]; then
-			# shellcheck source=/dev/null
-			source "${EXPORT_DIR}/EXPORT_NOOBS"
-			STAGE_DIR="${BASE_DIR}/export-noobs"
-			if [ "${USE_QCOW2}" = "1" ]; then
-				USE_QCOW2=0
-				run_stage
-				USE_QCOW2=1
-			else
-				run_stage
-			fi
-		fi
 	fi
 done
 
-if [ -x postrun.sh ]; then
+if [ -x "${BASE_DIR}/postrun.sh" ]; then
 	log "Begin postrun.sh"
 	cd "${BASE_DIR}"
 	./postrun.sh
 	log "End postrun.sh"
 fi
 
-if [ "${USE_QCOW2}" = "1" ]; then
-	unload_qimage
-fi
+BUILD_END_TIME=$(date +%s)
+BUILD_END_TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S %Z')
+BUILD_DURATION=$((BUILD_END_TIME - BUILD_START_TIME))
+BUILD_DURATION_FORMATTED=$(printf '%02d:%02d:%02d' $((BUILD_DURATION/3600)) $((BUILD_DURATION%3600/60)) $((BUILD_DURATION%60)))
 
 log "End ${BASE_DIR}"
+log "Build completed at: ${BUILD_END_TIMESTAMP}"
+log "Total build time: ${BUILD_DURATION_FORMATTED} (${BUILD_DURATION} seconds)"
+
+echo ""
+echo "========================================"
+echo "Build Summary"
+echo "========================================"
+echo "Started:  ${BUILD_START_TIMESTAMP}"
+echo "Finished: ${BUILD_END_TIMESTAMP}"
+echo "Duration: ${BUILD_DURATION_FORMATTED}"
+echo "========================================"
+echo ""

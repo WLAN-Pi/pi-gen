@@ -1,0 +1,17 @@
+[Unit]
+Description=Script executed only once at the first boot to finish image configurations
+After=network-online.target ufw.service local-fs.target
+Wants=network-online.target
+Requires=local-fs.target
+ConditionPathExists=!/var/lib/first-boot-done
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/first-boot.sh
+ExecStartPost=touch /var/lib/first-boot-done
+RemainAfterExit=yes
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

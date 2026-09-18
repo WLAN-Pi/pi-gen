@@ -1,0 +1,487 @@
+#!/bin/bash -e
+# prepare-release-notes - generate release notes with package comparisons
+#
+# Usage: ./scripts/prepare-release-notes [OPTIONS]
+#
+# Options:
+#   --mode <build|promote>       operation mode (required)
+#   --version <version>          version string (required)
+#   --full-version <full-ver>    full version with codename (required)
+#   --codename <codename>        codename for the release (required)
+#   --info-dir <directory>       directory containing current info files (default: release-files)
+#   --output-dir <directory>     directory to store release notes (default: release-notes)
+#   --build-type <type>          build type: dev, rc, final, point (required for build mode)
+#   --skip-full <true|false>     whether full image was skipped (default: false)
+#
+# Example:
+#   # for build mode
+#   ./scripts/prepare-release-notes --mode build --version 2025.04.19-dev.1 --full-version 2025.04.19-dev.1-theanine --codename theanine --build-type dev
+#
+#   # for promote mode
+#   ./scripts/prepare-release-notes --mode promote --version 2025.04.19 --full-version 2025.04.19-theanine --codename theanine
+#
+# Version: v0.3
+# Author: Josh Schmelzle
+# License: BSD-3
+
+MODE=""
+VERSION=""
+FULL_VERSION=""
+CODENAME=""
+INFO_DIR="release-files"
+OUTPUT_DIR="release-notes"
+BUILD_TYPE=""
+SKIP_FULL="false"
+AB_SUFFIX="AB"
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --mode)
+      MODE="$2"
+      shift 2
+      ;;
+    --version)
+      VERSION="$2"
+      shift 2
+      ;;
+    --full-version)
+      FULL_VERSION="$2"
+      shift 2
+      ;;
+    --codename)
+      CODENAME="$2"
+      shift 2
+      ;;
+    --info-dir)
+      INFO_DIR="$2"
+      shift 2
+      ;;
+    --output-dir)
+      OUTPUT_DIR="$2"
+      shift 2
+      ;;
+    --build-type)
+      BUILD_TYPE="$2"
+      shift 2
+      ;;
+    --skip-full)
+      SKIP_FULL="$2"
+      shift 2
+      ;;
+    --ab-suffix)
+      AB_SUFFIX="$2"
+      shift 2
+      ;;
+    *)
+      echo "Unknown option: $1"
+      exit 1
+      ;;
+  esac
+done
+
+if [ -z "$MODE" ]; then
+  echo "Error: --mode parameter is required"
+  exit 1
+fi
+
+if [ -z "$VERSION" ] || [ -z "$FULL_VERSION" ] || [ -z "$CODENAME" ]; then
+  echo "Error: --version, --full-version, and --codename parameters are required"
+  exit 1
+fi
+
+if [ "$MODE" = "build" ] && [ -z "$BUILD_TYPE" ]; then
+  echo "Error: --build-type parameter is required for build mode"
+  exit 1
+fi
+
+mkdir -p "$OUTPUT_DIR"
+mkdir -p "info_diffs"
+
+TEMP_DIR=$(mktemp -d)
+trap 'rm -rf "$TEMP_DIR"' EXIT
+
+extract_packages() {
+    grep -A 9999 "^Packages:" "$1" | grep "^ii " | awk '{print $2 "=" $3}'
+}
+
+download_release_info_files() {
+    local release_tag="$1"
+    local output_dir="$2"
+    
+    echo "Checking release: $release_tag"
+    echo "Output dir: $output_dir"
+    echo
+    
+    if ! gh release view "$release_tag" &>/dev/null; then
+        echo "Error: Release '$release_tag' not found"
+        return 1
+    fi
+
+    echo "Downloading info files from release: $release_tag"
+    
+    if ! gh release download "$release_tag" --pattern "*.info" --dir "$output_dir" 2>/dev/null; then
+        echo "Warning: Failed to download .info files from release $release_tag"
+        echo "Trying alternative pattern ..."
+        
+        mkdir -p "$output_dir/all"
+        if ! gh release download "$release_tag" --dir "$output_dir/all" 2>/dev/null; then
+            echo "Error: Failed to download any files from release $release_tag"
+            return 1
+        fi
+        
+        find "$output_dir/all" -name "*.info" -exec cp {} "$output_dir/" \;
+        rm -rf "$output_dir/all"
+    fi
+    
+    if [ -z "$(find "$output_dir" -name "*.info")" ]; then
+        echo "Error: No .info files found in release $release_tag"
+        return 1
+    fi
+    
+    echo "Successfully downloaded info files from release $release_tag"
+    return 0
+}
+
+compare_versions() {
+    # Returns: 
+    #  - 0 if equal
+    #  - 1 if v1 > v2
+    #  - 2 if v1 < v2
+
+    local v1="$1"
+    local v2="$2"
+
+    if dpkg --compare-versions "$v1" gt "$v2" 2>/dev/null; then
+        echo "1"
+    elif dpkg --compare-versions "$v1" lt "$v2" 2>/dev/null; then
+        echo "2"
+    else
+        echo "0"
+    fi
+}
+
+compare_info_files() {
+    local type="$1"
+    local prev_info="$2"
+    local curr_info="$3"
+    local output_file="$4"
+    
+    if [ ! -f "$prev_info" ] || [ ! -f "$curr_info" ]; then
+        echo "Missing info files for comparison. Type: $type"
+        echo "Previous: $prev_info (exists: $([ -f "$prev_info" ] && echo "yes" || echo "no"))"
+        echo "Current: $curr_info (exists: $([ -f "$curr_info" ] && echo "yes" || echo "no"))"
+        return 1
+    fi
+    
+    echo "Comparing $type info files:"
+    echo " - Previous: $(basename "$prev_info")"
+    echo " - Current: $(basename "$curr_info")"
+    echo "Output file: $output_file"
+    echo
+    
+    local PREV_PACKAGES=$(extract_packages "$prev_info")
+    local CURR_PACKAGES=$(extract_packages "$curr_info")
+    
+    local PREV_TEMP=$(mktemp)
+    local CURR_TEMP=$(mktemp)
+
+    echo "$PREV_PACKAGES" | sort > "$PREV_TEMP"
+    echo "$CURR_PACKAGES" | sort > "$CURR_TEMP"
+    
+    local PREV_NAMES=$(echo "$PREV_PACKAGES" | cut -d'=' -f1 | sort)
+    local CURR_NAMES=$(echo "$CURR_PACKAGES" | cut -d'=' -f1 | sort)
+    
+    NEW_PACKAGES=$(comm -13 <(echo "$PREV_NAMES") <(echo "$CURR_NAMES"))
+    REMOVED_PACKAGES=$(comm -23 <(echo "$PREV_NAMES") <(echo "$CURR_NAMES"))
+    
+    UPGRADED_PACKAGES=""
+    DOWNGRADED_PACKAGES=""
+
+    for pkg in $(comm -12 <(echo "$PREV_NAMES") <(echo "$CURR_NAMES")); do
+        PREV_VER=$(grep "^$pkg=" "$PREV_TEMP" | cut -d'=' -f2)
+        CURR_VER=$(grep "^$pkg=" "$CURR_TEMP" | cut -d'=' -f2)
+        
+        if [ "$PREV_VER" != "$CURR_VER" ]; then
+            COMPARE_RESULT=$(compare_versions "$CURR_VER" "$PREV_VER")
+            
+            if [ "$COMPARE_RESULT" -eq 1 ]; then
+                UPGRADED_PACKAGES+="$pkg: $PREV_VER → $CURR_VER"$'\n'
+            elif [ "$COMPARE_RESULT" -eq 2 ]; then
+                DOWNGRADED_PACKAGES+="$pkg: $PREV_VER → $CURR_VER"$'\n'
+            fi
+        fi
+    done
+
+    UPGRADED_PACKAGES=$(echo "$UPGRADED_PACKAGES" | sed '/^$/d')
+    DOWNGRADED_PACKAGES=$(echo "$DOWNGRADED_PACKAGES" | sed '/^$/d')
+
+    {
+        echo "# Package Changes Report - $type"
+        echo "Comparing $(basename "$prev_info") and $(basename "$curr_info")"
+
+        CHANGES_FOUND=0
+        
+        if [ -n "$NEW_PACKAGES" ]; then
+            CHANGES_FOUND=1
+            echo "#### New Packages"
+            for pkg in $NEW_PACKAGES; do
+                VERSION=$(grep "^$pkg=" "$CURR_TEMP" | cut -d'=' -f2)
+                echo "* $pkg=\`$VERSION\`"
+            done
+            echo
+        fi
+        
+        if [ -n "$UPGRADED_PACKAGES" ]; then
+            CHANGES_FOUND=1
+            echo "#### Updated Packages"
+            while IFS= read -r line; do
+                if [ -n "$line" ]; then
+                    pkg_name=$(echo "$line" | cut -d':' -f1)
+                    versions=$(echo "$line" | cut -d':' -f2- | sed 's/^ *//')
+                    old_ver=$(echo "$versions" | sed 's/ *→.*//')
+                    new_ver=$(echo "$versions" | sed 's/.*→ *//')
+                    echo "* $pkg_name: \`$old_ver\` → \`$new_ver\`"
+                fi
+            done <<< "$UPGRADED_PACKAGES"
+            echo
+        fi
+        
+        if [ -n "$DOWNGRADED_PACKAGES" ]; then
+            CHANGES_FOUND=1
+            echo "#### Downgraded Packages"
+            while IFS= read -r line; do
+                if [ -n "$line" ]; then
+                    pkg_name=$(echo "$line" | cut -d':' -f1)
+                    versions=$(echo "$line" | cut -d':' -f2- | sed 's/^ *//')
+                    old_ver=$(echo "$versions" | sed 's/ *→.*//')
+                    new_ver=$(echo "$versions" | sed 's/.*→ *//')
+                    echo "* $pkg_name: \`$old_ver\` → \`$new_ver\`"
+                fi
+            done <<< "$DOWNGRADED_PACKAGES"
+            echo
+        fi
+
+        if [ -n "$REMOVED_PACKAGES" ]; then
+            CHANGES_FOUND=1
+            echo "#### Removed Packages"
+            for pkg in $REMOVED_PACKAGES; do
+                VERSION=$(grep "^$pkg=" "$PREV_TEMP" | cut -d'=' -f2)
+                echo "* $pkg=\`$VERSION\`"
+            done
+            echo
+        fi
+        
+        if [ $CHANGES_FOUND -eq 0 ]; then
+            echo "No package updates in this release."
+        fi
+    } > "$output_file"
+    
+    rm "$PREV_TEMP" "$CURR_TEMP"
+    
+    return 0
+}
+
+find_previous_release() {
+    local current_version="$1"
+    local mode="$2"
+    local build_type="$3"
+    
+    echo "Finding previous release for comparison ..." >&2
+    echo " - Mode: $mode" >&2
+    echo " - Current version: $current_version" >&2
+    echo >&2
+    
+    RELEASES_JSON=$(gh release list --json name,tagName,createdAt,publishedAt,isDraft,isPrerelease --limit 50)
+    
+    if [ -z "$RELEASES_JSON" ]; then
+        echo "Warning: No releases found or unable to fetch releases" >&2
+        echo "NONE_FOUND"
+        return 0
+    fi
+    
+    if [ "$mode" = "build" ]; then
+        PREV_RELEASE=$(echo "$RELEASES_JSON" | jq -r '.[] | select(.isPrerelease==false and .isDraft==false) | .tagName' | head -n1)
+    elif [ "$mode" = "promote" ]; then
+        CURRENT_CREATED_AT=$(echo "$RELEASES_JSON" | jq -r --arg tag "$current_version" '.[] | select(.tagName==$tag) | .createdAt')
+        
+        if [ -z "$CURRENT_CREATED_AT" ]; then
+            echo "Warning: Cannot find creation date for current version" >&2
+            PREV_RELEASE=$(echo "$RELEASES_JSON" | jq -r '.[] | select(.isPrerelease==false and .isDraft==false) | .tagName' | head -n1)
+        else
+            PREV_RELEASE=$(echo "$RELEASES_JSON" | jq -r --arg date "$CURRENT_CREATED_AT" '.[] | select(.isPrerelease==false and .isDraft==false and .createdAt < $date) | .tagName' | head -n1)
+        fi
+    else
+        echo "Error: Invalid mode specified" >&2
+        echo "INVALID_MODE"
+        return 0
+    fi
+    
+    if [ -z "$PREV_RELEASE" ]; then
+        echo "No previous release found for comparison" >&2
+        echo "NONE_FOUND"
+        return 0
+    fi
+    
+    echo "Selected previous release for comparison: $PREV_RELEASE" >&2
+    echo "$PREV_RELEASE"
+    return 0
+}
+
+generate_release_notes() {
+    local prev_release="$1"
+    local mode="$2"
+    local version="$3"
+    local full_version="$4"
+    local build_type="$5"
+    local skip_full="$6"
+    local output_file="$7"
+    local comparison_file="$8"
+    local has_comparison="$9"
+    local ab_suffix="${10}"
+    
+    echo "Generating release notes function with following inputs:"
+    echo " - Previous release: $prev_release"
+    echo " - Mode: $mode"
+    echo " - Version: $version"
+    echo " - Full version: $full_version"
+    echo " - Build type: $build_type"
+    echo " - Skip full: $skip_full"
+    echo " - Output file: $output_file"
+    echo " - Comparison file: $comparison_file"
+    echo " - Has comparison: $has_comparison"
+    echo " - AB suffix: $ab_suffix"
+    echo
+    
+    {
+        if [ "$mode" = "build" ]; then
+            if [ "$build_type" = "dev" ]; then
+                echo "> ⚠️ **DEVELOPMENT BUILD** - Pre-release build for testing new features and bug fixes. May contain unstable code, incomplete features, or breaking changes. Not recommended for production use."
+            elif [ "$build_type" = "rc" ]; then
+                echo "> 🔍 **RELEASE CANDIDATE** - Feature-complete pre-release undergoing final testing. Stable enough for testing environments but should be validated before production deployment."
+            fi
+        elif [ "$mode" = "promote" ]; then
+            echo "> ✅ **STABLE RELEASE** - Production-ready release that has passed testing and validation."
+        fi
+
+        echo
+        if [ "$has_comparison" = "true" ] && [ -f "$comparison_file" ]; then
+            echo "## Changes since $prev_release"
+            echo
+            cat "$comparison_file"
+        else
+            echo "## What's changed"
+            echo
+            if [ "$has_comparison" = "true" ]; then
+                echo "Change comparison is currently unavailable."
+            else
+                echo "This is the initial release or comparison data is not available."
+            fi
+        fi
+
+        echo
+        echo "## Available images"
+        
+        if [ "$skip_full" != "true" ]; then
+            echo "- **Full image**: \`wlanpi-os-$full_version-full.img.gz\`"
+            echo "  - Complete image for all compatible WLAN Pi devices except the WLAN Pi Go"
+            echo
+        fi
+        
+        echo "- **Lite image**: \`wlanpi-os-$full_version-lite.img.gz\`"
+        echo "  - Update image for WLAN Pi Go devices with existing A/B partition layout"
+        echo "  - Single partition layout for direct flashing to alternate partition"
+        echo
+
+        echo "- **Lite A/B partition image**: \`wlanpi-os-$full_version-lite-$ab_suffix.img.gz\`"
+        echo "  - Base image for WLAN Pi Go with A/B partition management"
+        echo "  - Layout: CONFIGFS + 2 boot + 2 root + shared home partition"
+        echo "  - Provides automated failover and safe update testing via tryboot"
+        echo
+
+    } > "$output_file"
+    
+    echo "Release notes generated at: $output_file"
+}
+
+echo "Starting release notes preparation ..."
+echo "Mode: $MODE"
+echo "Version: $VERSION"
+echo "Full version: $FULL_VERSION"
+echo
+
+PREV_RELEASE=$(find_previous_release "$FULL_VERSION" "$MODE" "$BUILD_TYPE")
+HAS_COMPARISON="false"
+
+if [ "$PREV_RELEASE" = "NONE_FOUND" ] || [ "$PREV_RELEASE" = "INVALID_MODE" ]; then
+    echo "No valid previous release found for comparison"
+else
+    echo "Found previous release: $PREV_RELEASE"
+    
+    if download_release_info_files "$PREV_RELEASE" "$TEMP_DIR"; then
+        HAS_COMPARISON="true"
+
+        if [ "$SKIP_FULL" != "true" ]; then
+            CURR_FULL_INFO=$(find "$INFO_DIR" -name "*full*.info" -print -quit)
+            PREV_FULL_INFO=$(find "$TEMP_DIR" -name "*full*.info" -print -quit)
+            
+            if [ -n "$CURR_FULL_INFO" ] && [ -n "$PREV_FULL_INFO" ]; then
+                compare_info_files "full" "$PREV_FULL_INFO" "$CURR_FULL_INFO" "info_diffs/full_comparison.log"
+                echo "Full comparison saved to info_diffs/full_comparison.log"
+            else
+                echo "Warning: Could not compare full info files (this may be expected if full image was skipped or hasn't been done before)"
+            fi
+        fi
+
+        CURR_LITE_INFO=$(find "$INFO_DIR" -name "*lite*.info" -print -quit)
+        PREV_LITE_INFO=$(find "$TEMP_DIR" -name "*lite*.info" -print -quit)
+
+        if [ -n "$CURR_LITE_INFO" ] && [ -n "$PREV_LITE_INFO" ]; then
+            compare_info_files "lite" "$PREV_LITE_INFO" "$CURR_LITE_INFO" "info_diffs/lite_comparison.log"
+            echo "Lite comparison saved to info_diffs/lite_comparison.log"
+        else
+            echo "Warning: Could not compare lite info files"
+        fi
+
+        {
+            if [ -f "info_diffs/full_comparison.log" ] && [ "$SKIP_FULL" != "true" ]; then
+                echo "### Full image changes"
+                echo
+                tail -n +3 "info_diffs/full_comparison.log"
+            fi
+
+            if [ -f "info_diffs/lite_comparison.log" ]; then
+                echo "### Lite image changes"
+                echo
+                tail -n +3 "info_diffs/lite_comparison.log"
+            fi
+        } > "info_diffs/combined_comparison.log"
+
+        echo "Combined comparison saved to info_diffs/combined_comparison.log"
+    else
+        echo "Warning: Failed to download previous release info files"
+    fi
+fi
+
+mkdir -p "$OUTPUT_DIR"
+RELEASE_NOTES_FILE="$OUTPUT_DIR/release-notes.log"
+
+generate_release_notes "$PREV_RELEASE" "$MODE" "$VERSION" "$FULL_VERSION" "$BUILD_TYPE" "$SKIP_FULL" "$RELEASE_NOTES_FILE" "info_diffs/combined_comparison.log" "$HAS_COMPARISON" "$AB_SUFFIX"
+
+if [ -n "$GITHUB_OUTPUT" ]; then
+    echo "release_notes_path=$RELEASE_NOTES_FILE" >> "$GITHUB_OUTPUT"
+    echo "has_comparison=$HAS_COMPARISON" >> "$GITHUB_OUTPUT"
+    
+    if [ -f "info_diffs/combined_comparison.log" ]; then
+        echo "comparison_path=info_diffs/combined_comparison.log" >> "$GITHUB_OUTPUT"
+    fi
+
+    if [ -f "info_diffs/lite_comparison.log" ]; then
+        echo "lite_comparison_path=info_diffs/lite_comparison.log" >> "$GITHUB_OUTPUT"
+    fi
+
+    if [ -f "info_diffs/full_comparison.log" ]; then
+        echo "full_comparison_path=info_diffs/full_comparison.log" >> "$GITHUB_OUTPUT"
+    fi
+fi
+
+echo "Release notes preparation complete ..."

@@ -1,0 +1,127 @@
+#!/bin/bash -e
+# tryboot-alternate - temporarily boot the inactive partition set
+#
+# Tests the alternate partition set without changing the default
+#
+# If the alternate set fails to boot, the system will revert to 
+# the original partition set on the next boot
+#
+# Usage: tryboot-alternate [--check]
+#   --check: Show what would be done without rebooting
+#
+# Version: v0.3
+# Author:  Josh Schmelzle
+# License: BSD-3
+
+echo_status() {
+    echo -e "\e[1;34m>>> $1\e[0m"
+}
+
+echo_debug() {
+    echo -e "\e[1;36mDEBUG: $1\e[0m"
+}
+
+echo_warning() {
+    echo -e "\e[1;31mWARNING: $1\e[0m"
+}
+
+echo_error() {
+    echo -e "\e[1;31mERROR: $1\e[0m"
+    exit 1
+}
+
+CHECK_ONLY=false
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --check)
+            CHECK_ONLY=true
+            shift
+            ;;
+        -h|--help)
+            echo "Usage: $0 [--check]"
+            echo "  --check: Show what would be done without rebooting"
+            exit 0
+            ;;
+        *)
+            echo_error "Unknown option: $1\nUse --help for usage information"
+            ;;
+    esac
+done
+
+if [ "$(id -u)" -ne 0 ]; then
+    echo_error "Need elevated permissions ... run as root (sudo) ..."
+fi
+
+echo_status "Starting A/B partition tryboot"
+
+CURRENT_ROOT=$(mount | grep ' on / ' | awk '{print $1}')
+echo_debug "Current root: $CURRENT_ROOT"
+
+if [[ $CURRENT_ROOT == *"mmcblk0p5"* ]]; then
+    echo_debug "Currently booted from A partition set (boot p2, root p5)"
+    ACTIVE_SET="A"
+    TARGET_SET="B"
+    TARGET_BOOT_NUM=3
+elif [[ $CURRENT_ROOT == *"mmcblk0p6"* ]]; then
+    echo_debug "Currently booted from B partition set (boot p3, root p6)"
+    ACTIVE_SET="B"
+    TARGET_SET="A"
+    TARGET_BOOT_NUM=2
+else
+    echo_error "Unable to determine current boot partition ...\nCurrent root: $CURRENT_ROOT"
+fi
+
+echo_status "Will test boot partition set $TARGET_SET using tryboot"
+echo_debug "This will not change your default boot partition"
+echo_debug "If boot fails, system will revert to partition set $ACTIVE_SET on next boot"
+
+echo_debug "Verifying tryboot.txt configuration for target partition set ..."
+
+# Mount CONFIGFS to access tryboot.txt
+CONFIGFS_DEV="/dev/mmcblk0p1"
+CONFIGFS_MNT=$(mktemp -d)
+
+if mount "$CONFIGFS_DEV" "$CONFIGFS_MNT"; then
+    if [ -f "$CONFIGFS_MNT/tryboot.txt" ]; then
+        if grep -q "os_prefix=${TARGET_BOOT_NUM}:/" "$CONFIGFS_MNT/tryboot.txt"; then
+            echo_debug "tryboot.txt correctly configured for partition set $TARGET_SET"
+        else
+            echo_warning "Updating tryboot.txt to properly point to partition set $TARGET_SET"
+            if [ "$CHECK_ONLY" = false ]; then
+                sed -i "s|os_prefix=[0-9]\+:/|os_prefix=${TARGET_BOOT_NUM}:/|" "$CONFIGFS_MNT/tryboot.txt"
+            else
+                echo_debug "Would update tryboot.txt os_prefix to ${TARGET_BOOT_NUM}:/"
+            fi
+        fi
+        echo_debug "Content of tryboot.txt:"
+        cat "$CONFIGFS_MNT/tryboot.txt" | sed 's/^/    /'
+    else
+        echo_error "tryboot.txt not found in CONFIGFS partition."
+    fi
+    umount "$CONFIGFS_MNT"
+else
+    echo_error "Failed to mount CONFIGFS partition to access tryboot.txt"
+fi
+
+rmdir "$CONFIGFS_MNT"
+
+echo_status "Ready to tryboot to partition set $TARGET_SET"
+echo
+echo_debug "IMPORTANT: This performs a one-time boot test to partition set $TARGET_SET"
+echo_debug "If the test boot fails, the system will automatically revert to partition set $ACTIVE_SET on next boot"
+echo
+echo_debug "Boot process explanation:"
+echo " - reboot '${TARGET_BOOT_NUM} tryboot' → bootloader boots from partition ${TARGET_BOOT_NUM}"
+echo " - uses tryboot.txt configuration from CONFIGFS (p1)" 
+echo " - boots partition set ${TARGET_SET}"
+echo 
+echo -e "After verifying the alternate partition works correctly, from the alternate partition apply with:\n\033[1msudo commit-current-partition\033[0m"
+echo
+if [ "$CHECK_ONLY" = true ]; then
+    echo_status "Check mode - would execute: reboot '${TARGET_BOOT_NUM} tryboot'"
+    echo_debug "Use 'sudo tryboot-alternate' to apply and reboot"
+    echo
+else
+    echo_status "Rebooting to test partition set $TARGET_SET..."
+    reboot "${TARGET_BOOT_NUM} tryboot"
+fi
