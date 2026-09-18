@@ -62,6 +62,12 @@ on:
         required: false
         type: string
         default: '2500'
+
+      force_release:
+        description: '🔨 BUILD: override the default-branch release guard (manual, publishes from the dispatched ref)'
+        required: false
+        type: boolean
+        default: false
 permissions:
   contents: write
 jobs:
@@ -760,12 +766,23 @@ jobs:
   release:
     needs: [ab-partition-image, build-image, build-prep]
     runs-on: ubuntu-24.04-arm
-    if: ${{ github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
+    if: >-
+      ${{ !cancelled()
+          && needs.build-prep.result == 'success'
+          && needs.build-image.result == 'success'
+          && (needs.ab-partition-image.result == 'success' || needs.ab-partition-image.result == 'skipped')
+          && (github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+              || github.event.inputs.force_release == 'true') }}
     permissions:
       contents: write
     steps:
-      - name: Confirm running on default branch for release publishing
-        run: echo "This job only runs on the default branch"
+      - name: Confirm release publishing ref
+        run: |
+          if [ "${{ github.event.inputs.force_release }}" = "true" ]; then
+            echo "::warning::force_release=true: publishing a release from ${{ github.ref_name }}, not the default branch"
+          else
+            echo "Publishing from the default branch: ${{ github.ref_name }}"
+          fi
 
       - name: Checkout
         uses: actions/checkout@v7

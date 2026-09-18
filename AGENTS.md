@@ -1,21 +1,37 @@
 # Guidance for coding agents
 
-Read this first. [CI](docs/CI.md) covers the build pipeline and
-[versioning](docs/VERSIONING.md) covers releases.
+Read this first. [CI](docs/CI.md) covers the build pipeline,
+[versioning](docs/VERSIONING.md) covers version numbers, and
+[releasing](docs/RELEASING.md) covers how releases are cut and promoted.
 
 ## Repo model
 
 - This repo builds WLAN Pi OS images from the `wlanpi1-lite` and
   `wlanpi2-full` stages. There are no upstream `stage0-5` stages.
-- PRs target the default branch, which is the living current-distro
-  builder. Released states are annotated git tags, not branch merges.
+- The default branch is `trixie64`, the living builder for the current
+  Debian release, continuing the `bullseye64` and `bookworm64` line. PRs
+  target the default branch; there is no `main`.
 - One concern per PR. No mixed move-plus-change diffs. Soft cap ~400
   changed lines.
-- CI-only, docs-only, or workflow-only changes do not create releases.
-  Releases are cut by the build workflow and recorded as tags.
 - Upstream (`RPi-Distro/pi-gen`) changes are audited and cherry-picked.
   The trees have diverged (no `stage0-5` here), so never merge upstream
   wholesale.
+
+## Release engineering
+
+- Releases are immutable, tag-based artifacts. Never create, delete,
+  move, or retag a release or its tag.
+- There are no release branches. Versions are build inputs, not branch
+  properties. See [versioning](docs/VERSIONING.md).
+- Releases are produced only by `.github/workflows/build.yml` through
+  `workflow_dispatch`, normally dispatched on the default branch. The
+  `force_release` input overrides the default-branch guard and is
+  human-only; agents must not use it.
+- Every build type (`dev`, `rc`, `final`, `point`) publishes as a GitHub
+  pre-release by design. Promoting a build to a stable, latest release
+  is a manual step. See [releasing](docs/RELEASING.md).
+- Promotion from `-rc` to final is intentionally not automated.
+- Docs-only, CI-only, or workflow-only changes do not create releases.
 
 ## Before you write
 

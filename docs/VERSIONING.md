@@ -1,86 +1,59 @@
-# WLAN Pi OS versioning for Bookworm
+# WLAN Pi OS versioning
+
+This scheme applies to the current builder branch, `trixie64`.
 
 Format: `YY.MM[.point][-type.sequence]-CODENAME`
 
-Structure:
+- `YY.MM`: base month.
+- `.point`: optional patch number.
+- `-type.sequence`: optional pre-release type and sequence number.
+- `-CODENAME`: coffee-themed codename.
 
-- Format: `YY.MM[.point][-type.sequence]-CODENAME`
-  - `YY.MM`: Base date
-  - `[.point]`: Optional patch release number (1, 2, 3...)
-  - `[-type.sequence]`: Optional pre-release type and sequential number (-dev.1, -rc.2, etc.)
-  - `-CODENAME`: Coffee-themed codename
+## Build types
 
-## Overview
+| Type | Format | Purpose |
+|---|---|---|
+| `dev` | `YY.MM-dev.N-CODENAME` | Development builds. Default codename `theanine`. |
+| `rc` | `YY.MM-rc.N-CODENAME` | Release candidates for wider testing. |
+| `final` | `YY.MM-CODENAME` | Stable release. |
+| `point` | `YY.MM.N-CODENAME` | Patch release for an existing month. |
 
-- Release version format: YY.MM-CODENAME
-- Point releases: Rare, using YY.MM.point-CODENAME format
-- Codenames: Coffee themed starting with 'Affogato' for releases. Development releases should be using 'theanine' as default codename.
-- Pre-release markers: -dev, -rc
-- Dev builds: YY.MM-dev.sequence-CODENAME
-- Release candidates: YY.MM-rc.sequence-CODENAME
-- Development track: Infrequent
-- Testing approach: -dev releases until an -rc is cut
-- Release cadence: Irregular (as needed)
+The sequence number `N` increments from the existing git tags for the same
+base and type. A point release takes its base from the `point_base` input and
+increments from the existing tags under that base. See [CI.md](CI.md) for how
+the pipeline computes this.
 
-Precedence clarification:
-
-- 25.07-dev.1-theanine (development)
-- 25.07-rc.1-theanine (release candidate)
-- 25.07-theanine (final release)
-- 25.07.1-theanine (patch release)
-
-Traceability information stored in:
-
-- `/etc/rpi-issue`
-
-Codenames:
-
-- Stored in `/etc/os-release`
-
-Version:
-
-- Stored in `/etc/wlanpi-release`
-
-Examples:
+## Precedence
 
 ```
-25.07-dev.1-theanine  (First development build in July 2025)
-25.07-dev.2-theanine  (Second development build same month)
-25.07-rc.1-theanine   (First release candidate)
-[Testing period]
-25.07-theanine        (Final release)
-25.07.1-theanine      (Point/patch/hotfix release if needed)
+25.07-dev.1-theanine   (development)
+25.07-rc.1-theanine    (release candidate)
+25.07-theanine         (final release)
+25.07.1-theanine       (patch release)
 ```
 
-## Versioning guidelines
+## Codenames
 
-### Version structure examples
+Release codenames are coffee themed and use TitleCase, for example
+`Affogato`, `Breve`, and `Cortado`. Development builds default to
+`theanine`.
 
-- Format: `YY.MM[.point][-type.sequence]-CODENAME`
-  - `YY.MM`: 25.07-theanine
-  - `.point`: 25.07.1-theanine
-  - `-type`: 
-    - 25.07-dev.1-theanine
-    - 25.07-rc.1-theanine
-  - `.sequence`:
-    - 25.07-dev.1-theanine
-    - 25.07-dev.2-theanine
-    - 25.07-dev.3-theanine
+## Tags and release titles
 
-### Version type examples
+The git tag is the full version with no `v` prefix, for example
+`26.08-Cortado`. The GitHub release title adds the `v` prefix, for example
+`v26.08-Cortado`. Every build publishes as a pre-release; promotion to a
+stable, latest release is manual. See [RELEASING.md](RELEASING.md).
 
-1. Development builds: `YY.MM-dev.sequence-CODENAME`
-   - For developer testing and feature development
-   - Example: 25.07-dev.1-theanine
+## Traceability
 
-2. Release candidates: `YY.MM-rc.sequence-CODENAME`
-   - For wider testing before final release
-   - Example: 25.07-rc.1-theanine
+The image records the version without the codename in `/etc/wlanpi-release`:
 
-3. Final releases: `YY.MM-CODENAME`
-   - Official stable releases
-   - Example: 25.07-theanine
+```
+VERSION=26.08
+```
 
-4. Patch releases: `YY.MM.point-CODENAME`
-   - For emergency fixes or minor updates
-   - Example: 25.07.1-theanine
+## Related
+
+- [CI.md](CI.md): build pipeline and input reference.
+- [RELEASING.md](RELEASING.md): how to cut and promote a release.

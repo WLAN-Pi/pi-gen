@@ -1,5 +1,6 @@
 # PRDs
 
 - [CI.md](CI.md)
+- [RELEASING.md](RELEASING.md)
 - [VERSIONING.md](VERSIONING.md)
 - [PARTITIONS.md](PARTITIONS.md)
