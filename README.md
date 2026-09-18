@@ -54,6 +54,12 @@ warnings; both are benign.
 
 ## How this repo works
 
+- Branches: `trixie64` is the default branch, the living builder for the
+  current Debian release, continuing the `bullseye64` and `bookworm64`
+  line. When WLAN Pi OS moves to the next Debian release, `trixie64`
+  freezes (it stays so you can rebuild old images) and a new distro
+  branch becomes the default. PRs target the default branch; there is no
+  `main`.
 - [Versioning](docs/VERSIONING.md): image versions (`YY.MM` plus codename)
   are build inputs, not branch properties.
 - [CI](docs/CI.md): the build and release pipeline.
