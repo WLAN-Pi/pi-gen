@@ -2,7 +2,7 @@ wlanpi-bluetooth
 wlanpi-common
 wlanpi-core
 wlanpi-fpms
-#wlanpi-grafana (needs Grafana repo configured - see Phase 6 notes)
+wlanpi-grafana
 wlanpi-hotspot
 #wlanpi-hwtest (not in packagecloud repo)
 wlanpi-librespeed-cli
