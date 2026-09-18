@@ -37,8 +37,8 @@ them (or use the `trixie` branch, which sideloads them dependency-ordered).
 Native arm64 build (this host), must run as root:
 
 ```bash
-cd ~/source/pi-gen-bookworm
-sudo ./build-arm64.sh
+cd ~/source/pi-gen
+sudo -E ./build.sh
 ```
 
 - Settings come from `config` (release=trixie, both variants via

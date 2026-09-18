@@ -190,8 +190,8 @@ do
 	esac
 done
 
-export PI_GEN=${PI_GEN:-pi-gen-bookworm}
-export PI_GEN_REPO=${PI_GEN_REPO:-https://github.com/WLAN-Pi/pi-gen-bookworm/}
+export PI_GEN=${PI_GEN:-pi-gen}
+export PI_GEN_REPO=${PI_GEN_REPO:-https://github.com/WLAN-Pi/pi-gen/}
 export PI_GEN_RELEASE=${PI_GEN_RELEASE:-WLAN Pi}
 
 export ARCH=arm64
