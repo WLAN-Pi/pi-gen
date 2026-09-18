@@ -840,7 +840,7 @@ jobs:
         run: |
           gh release create ${{ env.git_tag }} \
             --prerelease \
-            --title "WLAN Pi OS ${{ needs.build-prep.outputs.full_version }} ${{ env.BUILD_TYPE_LABEL }}" \
+            --title "v${{ needs.build-prep.outputs.full_version }} ${{ env.BUILD_TYPE_LABEL }}" \
             --notes-file ./release-notes/release-notes.log \
             --generate-notes \
             release-files/*
