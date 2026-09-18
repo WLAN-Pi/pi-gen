@@ -165,12 +165,27 @@ Caveats:
 - The override publishes a release from a non-default branch. Use it
   deliberately, and only for a branch you intend to release from.
 
+## Release composition
+
+A release contains the images that were built. See
+[CI.md](CI.md#release-composition) for the full matrix.
+
+- Full image: built unless `skip_full_image=true`.
+- Lite image: built unless `skip_lite_image=true`.
+- Lite A/B image: built only when `ab_partition=true` and the lite image was
+  built.
+
+You cannot set both `skip_full_image=true` and `skip_lite_image=true`.
+
 ## Gotchas
 
 - `skip_full_image=true` builds the lite image only. The release title ends
   with `[LITE ONLY]`.
+- `skip_lite_image=true` builds the full image only. The release title ends
+  with `[FULL ONLY]`, and the A/B job is skipped because there is no lite
+  image to partition.
 - `ab_partition=false` still publishes a release, containing only the images
-  that were built.
+  that were built. The release notes omit the A/B image.
 
 ## Recovery
 

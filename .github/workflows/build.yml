@@ -39,11 +39,17 @@ on:
         type: string
 
       skip_full_image:
-        description: '🔨 BUILD: lite image only'
+        description: '🔨 BUILD: skip the full image (lite image only)'
         required: false
         type: boolean
         default: false
-      
+
+      skip_lite_image:
+        description: '🔨 BUILD: skip the lite image (full image only)'
+        required: false
+        type: boolean
+        default: false
+
       ab_partition:
         description: '🔨 BUILD: post process lite image for A/B partitioning'
         required: false
@@ -270,6 +276,7 @@ jobs:
           echo "WLANPI_CODENAME: ${{ needs.build-prep.outputs.codename }}"
           echo "WLANPI_FULL_VERSION: ${{ needs.build-prep.outputs.full_version }}"
           echo "SKIP_FULL_IMAGE: ${{ github.event.inputs.skip_full_image }}"
+          echo "SKIP_LITE_IMAGE: ${{ github.event.inputs.skip_lite_image }}"
           echo "INCLUDE_PACKAGECLOUD_DEV: ${{ needs.build-prep.outputs.include_packagecloud_dev }}"
 
       - name: Sudo build images
@@ -281,12 +288,22 @@ jobs:
           WLANPI_CODENAME: ${{ needs.build-prep.outputs.codename }}
           WLANPI_FULL_VERSION: ${{ needs.build-prep.outputs.full_version }}
           SKIP_FULL_IMAGE: ${{ github.event.inputs.skip_full_image }}
+          SKIP_LITE_IMAGE: ${{ github.event.inputs.skip_lite_image }}
           INCLUDE_PACKAGECLOUD_DEV: ${{ needs.build-prep.outputs.include_packagecloud_dev }}
         run: |
+          if [ "$SKIP_FULL_IMAGE" = "true" ] && [ "$SKIP_LITE_IMAGE" = "true" ]; then
+            echo "::error::skip_full_image and skip_lite_image cannot both be true"
+            exit 1
+          fi
           if [ "$SKIP_FULL_IMAGE" = "true" ]; then
             echo "Skipping full image build as requested"
             mkdir -p wlanpi2-full
             touch wlanpi2-full/SKIP
+          fi
+          if [ "$SKIP_LITE_IMAGE" = "true" ]; then
+            echo "Skipping lite image build as requested"
+            mkdir -p wlanpi1-lite
+            touch wlanpi1-lite/SKIP
           fi
           sudo -E ./build.sh 2>&1 | tee build_output.log
 
@@ -437,7 +454,7 @@ jobs:
           ls -la zips/
 
       - name: Compare full and lite info files
-        if: ${{ github.event.inputs.skip_full_image != 'true' }}
+        if: ${{ github.event.inputs.skip_full_image != 'true' && github.event.inputs.skip_lite_image != 'true' }}
         run: |
           echo "Comparing full and lite package differences ..."
           
@@ -512,10 +529,12 @@ jobs:
           if-no-files-found: ignore
 
       - name: Upload lite image
+        if: ${{ github.event.inputs.skip_lite_image != 'true' }}
         uses: actions/upload-artifact@v7
         with:
           name: wlanpi-os-${{ env.version }}-lite
           path: processed/wlanpi-os*lite*.img.gz
+          if-no-files-found: ignore
 
       - name: Upload digest (checksums)
         uses: actions/upload-artifact@v7
@@ -551,7 +570,7 @@ jobs:
   ab-partition-image:
     needs: [build-image, build-prep]
     runs-on: ubuntu-24.04-arm
-    if: ${{ github.event.inputs.ab_partition == 'true' }}
+    if: ${{ github.event.inputs.ab_partition == 'true' && github.event.inputs.skip_lite_image != 'true' }}
     steps:
       - name: Checkout repository (for scripts)
         uses: actions/checkout@v7
@@ -816,7 +835,10 @@ jobs:
       - name: Set build type label for release title
         run: |
           if [ "${{ github.event.inputs.skip_full_image }}" == "true" ]; then
-            echo "BUILD_TYPE_LABEL=[LITE ONLY]" >> $GITHUB_ENV
+            echo "BUILD_TYPE_LABEL=[LITE ONLY]" >> "$GITHUB_ENV"
+          fi
+          if [ "${{ github.event.inputs.skip_lite_image }}" == "true" ]; then
+            echo "BUILD_TYPE_LABEL=[FULL ONLY]" >> "$GITHUB_ENV"
           fi
 
       - name: Check for required scripts
@@ -841,6 +863,8 @@ jobs:
             --build-type ${{ github.event.inputs.build_type }} \
             --info-dir release-files \
             --skip-full ${{ github.event.inputs.skip_full_image }} \
+            --skip-lite ${{ github.event.inputs.skip_lite_image }} \
+            --ab-partition ${{ github.event.inputs.ab_partition }} \
             --ab-suffix AB_PARTITION
           then
             echo "::error::Failed to generate release notes ..."

@@ -12,6 +12,8 @@
 #   --output-dir <directory>     directory to store release notes (default: release-notes)
 #   --build-type <type>          build type: dev, rc, final, point (required for build mode)
 #   --skip-full <true|false>     whether full image was skipped (default: false)
+#   --skip-lite <true|false>     whether lite image was skipped (default: false)
+#   --ab-partition <true|false>  whether the A/B lite image was built (default: true)
 #
 # Example:
 #   # for build mode
@@ -32,6 +34,8 @@ INFO_DIR="release-files"
 OUTPUT_DIR="release-notes"
 BUILD_TYPE=""
 SKIP_FULL="false"
+SKIP_LITE="false"
+AB_PARTITION="true"
 AB_SUFFIX="AB"
 
 while [[ $# -gt 0 ]]; do
@@ -66,6 +70,14 @@ while [[ $# -gt 0 ]]; do
       ;;
     --skip-full)
       SKIP_FULL="$2"
+      shift 2
+      ;;
+    --skip-lite)
+      SKIP_LITE="$2"
+      shift 2
+      ;;
+    --ab-partition)
+      AB_PARTITION="$2"
       shift 2
       ;;
     --ab-suffix)
@@ -341,6 +353,8 @@ generate_release_notes() {
     local comparison_file="$8"
     local has_comparison="$9"
     local ab_suffix="${10}"
+    local skip_lite="${11}"
+    local ab_partition="${12}"
     
     echo "Generating release notes function with following inputs:"
     echo " - Previous release: $prev_release"
@@ -349,6 +363,8 @@ generate_release_notes() {
     echo " - Full version: $full_version"
     echo " - Build type: $build_type"
     echo " - Skip full: $skip_full"
+    echo " - Skip lite: $skip_lite"
+    echo " - AB partition: $ab_partition"
     echo " - Output file: $output_file"
     echo " - Comparison file: $comparison_file"
     echo " - Has comparison: $has_comparison"
@@ -386,20 +402,23 @@ generate_release_notes() {
         
         if [ "$skip_full" != "true" ]; then
             echo "- **Full image**: \`wlanpi-os-$full_version-full.img.gz\`"
-            echo "  - Complete image for all compatible Raspberry Pi based WLAN Pi devices except the Go"
+            echo "  - Complete image for WLAN Pi devices that use the full image"
             echo
         fi
-        
-        echo "- **Lite image**: \`wlanpi-os-$full_version-lite.img.gz\`"
-        echo "  - Update image for WLAN Pi Go devices with existing A/B partition layout"
-        echo "  - Single partition layout for direct flashing to alternate partition"
-        echo
 
-        echo "- **Lite A/B partition image**: \`wlanpi-os-$full_version-lite-$ab_suffix.img.gz\`"
-        echo "  - Base image for WLAN Pi Go with A/B partition management"
-        echo "  - Layout: CONFIGFS + 2 boot + 2 root + shared home partition"
-        echo "  - Provides automated failover and safe update testing via tryboot"
-        echo
+        if [ "$skip_lite" != "true" ]; then
+            echo "- **Lite image**: \`wlanpi-os-$full_version-lite.img.gz\`"
+            echo "  - Single-partition image for direct flashing or in-place updates"
+            echo
+        fi
+
+        if [ "$ab_partition" = "true" ] && [ "$skip_lite" != "true" ]; then
+            echo "- **Lite A/B partition image**: \`wlanpi-os-$full_version-lite-$ab_suffix.img.gz\`"
+            echo "  - Lite image with A/B partition management"
+            echo "  - Layout: CONFIGFS + 2 boot + 2 root + shared home partition"
+            echo "  - Provides automated failover and safe update testing via tryboot"
+            echo
+        fi
 
     } > "$output_file"
     
@@ -435,14 +454,16 @@ else
             fi
         fi
 
-        CURR_LITE_INFO=$(find "$INFO_DIR" -name "*lite*.info" -print -quit)
-        PREV_LITE_INFO=$(find "$TEMP_DIR" -name "*lite*.info" -print -quit)
+        if [ "$SKIP_LITE" != "true" ]; then
+            CURR_LITE_INFO=$(find "$INFO_DIR" -name "*lite*.info" -print -quit)
+            PREV_LITE_INFO=$(find "$TEMP_DIR" -name "*lite*.info" -print -quit)
 
-        if [ -n "$CURR_LITE_INFO" ] && [ -n "$PREV_LITE_INFO" ]; then
-            compare_info_files "lite" "$PREV_LITE_INFO" "$CURR_LITE_INFO" "info_diffs/lite_comparison.log"
-            echo "Lite comparison saved to info_diffs/lite_comparison.log"
-        else
-            echo "Warning: Could not compare lite info files"
+            if [ -n "$CURR_LITE_INFO" ] && [ -n "$PREV_LITE_INFO" ]; then
+                compare_info_files "lite" "$PREV_LITE_INFO" "$CURR_LITE_INFO" "info_diffs/lite_comparison.log"
+                echo "Lite comparison saved to info_diffs/lite_comparison.log"
+            else
+                echo "Warning: Could not compare lite info files"
+            fi
         fi
 
         {
@@ -468,7 +489,7 @@ fi
 mkdir -p "$OUTPUT_DIR"
 RELEASE_NOTES_FILE="$OUTPUT_DIR/release-notes.log"
 
-generate_release_notes "$PREV_RELEASE" "$MODE" "$VERSION" "$FULL_VERSION" "$BUILD_TYPE" "$SKIP_FULL" "$RELEASE_NOTES_FILE" "info_diffs/combined_comparison.log" "$HAS_COMPARISON" "$AB_SUFFIX"
+generate_release_notes "$PREV_RELEASE" "$MODE" "$VERSION" "$FULL_VERSION" "$BUILD_TYPE" "$SKIP_FULL" "$RELEASE_NOTES_FILE" "info_diffs/combined_comparison.log" "$HAS_COMPARISON" "$AB_SUFFIX" "$SKIP_LITE" "$AB_PARTITION"
 
 if [ -n "$GITHUB_OUTPUT" ]; then
     echo "release_notes_path=$RELEASE_NOTES_FILE" >> "$GITHUB_OUTPUT"
