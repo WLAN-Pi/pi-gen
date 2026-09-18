@@ -60,9 +60,14 @@ warnings; both are benign.
   freezes (it stays so you can rebuild old images) and a new distro
   branch becomes the default. PRs target the default branch; there is no
   `main`.
+- Releases: every build publishes a GitHub pre-release tagged with its
+  full version. Releases are immutable tag artifacts, and promoting a build
+  to a stable, latest release is a manual step. See
+  [Releasing](docs/RELEASING.md).
 - [Versioning](docs/VERSIONING.md): image versions (`YY.MM` plus codename)
   are build inputs, not branch properties.
 - [CI](docs/CI.md): the build and release pipeline.
+- [Releasing](docs/RELEASING.md): cut and promote a release.
 - [Local debs](docs/LOCAL-DEBS.md): inject locally built packages.
 - [Partitions](docs/PARTITIONS.md): A/B partition layout.
 - [Product requirements](docs/PRDs.md).
