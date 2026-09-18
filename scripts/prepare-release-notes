@@ -383,7 +383,7 @@ generate_release_notes() {
         
         if [ "$skip_full" != "true" ]; then
             echo "- **Full image**: \`wlanpi-os-$full_version-full.img.gz\`"
-            echo "  - Complete image for all compatible WLAN Pi devices except the WLAN Pi Go"
+            echo "  - Complete image for all compatible Raspberry Pi based WLAN Pi devices except the Go"
             echo
         fi
         
