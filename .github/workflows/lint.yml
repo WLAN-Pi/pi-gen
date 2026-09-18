@@ -17,4 +17,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y shellcheck
 
       - name: Run shellcheck (warning severity)
-        run: git ls-files '*.sh' | xargs -r shellcheck -S warning
+        run: |
+          { git ls-files '*.sh'
+            git ls-files -s | awk '$1 == "100755" {print $4}' | xargs -r grep -l '^#!.*sh'
+          } | sort -u | xargs -r shellcheck -S warning

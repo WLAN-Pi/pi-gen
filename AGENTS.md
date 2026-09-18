@@ -42,11 +42,14 @@ Reuse first, write second:
 ## Verify before committing
 
 ```bash
-git ls-files '*.sh' | xargs -r shellcheck -S warning
+{ git ls-files '*.sh'
+  git ls-files -s | awk '$1 == "100755" {print $4}' | xargs -r grep -l '^#!.*sh'
+} | sort -u | xargs -r shellcheck -S warning
 ```
 
-All tracked shell scripts must pass shellcheck at warning severity. CI
-enforces this (`.github/workflows/lint.yml`).
+All tracked `*.sh` files plus executable scripts without a `.sh` suffix
+must pass shellcheck at warning severity. CI enforces this
+(`.github/workflows/lint.yml`).
 
 ## Documentation
 
