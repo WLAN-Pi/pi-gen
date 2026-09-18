@@ -2,6 +2,7 @@ wlanpi-bluetooth
 wlanpi-common
 wlanpi-core
 wlanpi-fpms
+wlanpi-mcp
 #wlanpi-grafana (fails during build still)
 wlanpi-hotspot
 #wlanpi-hwtest (not in packagecloud repo)
