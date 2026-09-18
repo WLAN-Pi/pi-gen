@@ -179,17 +179,20 @@ compare_info_files() {
     echo "Output file: $output_file"
     echo
     
-    local PREV_PACKAGES=$(extract_packages "$prev_info")
-    local CURR_PACKAGES=$(extract_packages "$curr_info")
-    
-    local PREV_TEMP=$(mktemp)
-    local CURR_TEMP=$(mktemp)
+    local PREV_PACKAGES CURR_PACKAGES
+    PREV_PACKAGES=$(extract_packages "$prev_info")
+    CURR_PACKAGES=$(extract_packages "$curr_info")
+
+    local PREV_TEMP CURR_TEMP
+    PREV_TEMP=$(mktemp)
+    CURR_TEMP=$(mktemp)
 
     echo "$PREV_PACKAGES" | sort > "$PREV_TEMP"
     echo "$CURR_PACKAGES" | sort > "$CURR_TEMP"
-    
-    local PREV_NAMES=$(echo "$PREV_PACKAGES" | cut -d'=' -f1 | sort)
-    local CURR_NAMES=$(echo "$CURR_PACKAGES" | cut -d'=' -f1 | sort)
+
+    local PREV_NAMES CURR_NAMES
+    PREV_NAMES=$(echo "$PREV_PACKAGES" | cut -d'=' -f1 | sort)
+    CURR_NAMES=$(echo "$CURR_PACKAGES" | cut -d'=' -f1 | sort)
     
     NEW_PACKAGES=$(comm -13 <(echo "$PREV_NAMES") <(echo "$CURR_NAMES"))
     REMOVED_PACKAGES=$(comm -23 <(echo "$PREV_NAMES") <(echo "$CURR_NAMES"))

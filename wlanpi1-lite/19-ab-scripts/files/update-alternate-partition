@@ -81,7 +81,6 @@ if [[ $CURRENT_ROOT == *"mmcblk0p5"* ]]; then
     ACTIVE_BOOT="/dev/mmcblk0p2"
     ACTIVE_ROOT="/dev/mmcblk0p5"
     HOME_PART="/dev/mmcblk0p7"
-    BOOT_PARTITION=2
     INACTIVE_BOOT_NUM=3
     ACTIVE_BOOT_NUM=2
 elif [[ $CURRENT_ROOT == *"mmcblk0p6"* ]]; then
@@ -92,7 +91,6 @@ elif [[ $CURRENT_ROOT == *"mmcblk0p6"* ]]; then
     ACTIVE_BOOT="/dev/mmcblk0p3"
     ACTIVE_ROOT="/dev/mmcblk0p6"
     HOME_PART="/dev/mmcblk0p7"
-    BOOT_PARTITION=3
     INACTIVE_BOOT_NUM=2
     ACTIVE_BOOT_NUM=3
 else
@@ -158,10 +156,8 @@ gunzip -c "$IMAGE_FILE" | dd bs=512 count=34 of="$TEMP_DIR/mbr.img" 2>/dev/null
 PART_INFO=$(fdisk -l "$TEMP_DIR/mbr.img" 2>/dev/null || echo "Failed to read partition info")
 echo "$PART_INFO"
 
-IS_AB_IMAGE=false
 if echo "$PART_INFO" | grep -q "W95 Ext'd"; then
     echo_debug "Detected A/B partitioned image with extended partition"
-    IS_AB_IMAGE=true
 
     BOOT_START=$(echo "$PART_INFO" | awk '/img2[[:space:]]/ {print $3}')
     BOOT_SIZE=$(echo "$PART_INFO" | awk '/img2[[:space:]]/ {print $5}')
