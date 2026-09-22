@@ -401,13 +401,7 @@ generate_release_notes() {
         echo "## Available images"
         
         if [ "$skip_full" != "true" ]; then
-            # The full image is xz-compressed when its gzip exceeds GitHub's
-            # 2 GiB release-asset cap; report whichever file is actually present.
-            full_ext="img.gz"
-            if [ -f "$INFO_DIR/wlanpi-os-$full_version-full.img.xz" ]; then
-                full_ext="img.xz"
-            fi
-            echo "- **Full image**: \`wlanpi-os-$full_version-full.$full_ext\`"
+            echo "- **Full image**: \`wlanpi-os-$full_version-full.img.gz\`"
             echo "  - Complete image for WLAN Pi devices that use the full image"
             echo
         fi
