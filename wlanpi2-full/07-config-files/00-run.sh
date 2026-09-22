@@ -114,6 +114,9 @@ copy_overlay /etc/ufw/user.rules -o root -g root -m 640
 # Add a default wpa_supplicant configuration with the control interface disabled
 copy_overlay /etc/wpa_supplicant/wpa_supplicant.conf -o root -g root -m 600
 
+# Keep Wi-Fi under wlanpi-core control; NetworkManager manages only the wired NIC
+copy_overlay /etc/NetworkManager/conf.d/99-wlanpi-unmanaged-wifi.conf -o root -g root -m 644
+
 # Copy config file: avahi-daemon
 copy_overlay /etc/avahi/avahi-daemon.conf -o root -g root -m 644
 
