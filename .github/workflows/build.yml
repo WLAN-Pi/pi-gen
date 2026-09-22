@@ -480,6 +480,8 @@ jobs:
       - name: Scan SBOMs for vulnerabilities
         id: cve_scan
         continue-on-error: true
+        env:
+          GRYPE_DB_CACHE_DIR: ${{ runner.temp }}/grype
         run: |
           for SBOM in processed/*.sbom.xz; do
             [ -f "$SBOM" ] || continue
@@ -531,6 +533,7 @@ jobs:
             processed/*.sbom.xz
 
       - name: Upload vulnerability reports
+        if: steps.cve_scan.outcome == 'success'
         uses: actions/upload-artifact@v7
         with:
           name: wlanpi-os-${{ env.version }}_cve

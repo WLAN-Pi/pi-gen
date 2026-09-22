@@ -21,6 +21,8 @@ Read this first. [CI](docs/CI.md) covers the build pipeline,
 
 - Releases are immutable, tag-based artifacts. Never create, delete,
   move, or retag a release or its tag.
+- You may convert a mistaken or test-only pre-release to a draft with
+  `gh release edit <tag> --draft`; this preserves its tag and artifacts.
 - There are no release branches. Versions are build inputs, not branch
   properties. See [versioning](docs/VERSIONING.md).
 - Releases are produced only by `.github/workflows/build.yml` through
