@@ -766,18 +766,10 @@ sleep 1
 rm -rf "$TEMP_DIR" || echo "Warning: could not fully clean up temp directory"
 }
 
-echo "Calculating SHA-256 hash for $OUTPUT_IMAGE ..."
-HASH=$(sha256sum "$OUTPUT_IMAGE")
-echo "$HASH" > "$OUTPUT_IMAGE".sha256
-HASH_ONLY=$(echo "$HASH" | awk '{print $1}')
-
 echo
 echo "====================================="
 echo "A/B partitioned image created successfully!"
 echo "Output image: $OUTPUT_IMAGE"
-echo "SHA-256 hash: $HASH_ONLY"
-echo
-echo "Verify integrity with: sha256sum --check ""$OUTPUT_IMAGE"".sha256"
 echo
 echo "The image has the following partition structure:"
 echo "1: CONFIGFS  - Configuration partition for A/B boot management"
