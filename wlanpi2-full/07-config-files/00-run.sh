@@ -129,6 +129,11 @@ copy_overlay /etc/kismet/kismet_site.conf -o root -g root -m 644
 # Copy config file: kismet.service.d/override.conf
 copy_overlay /etc/systemd/system/kismet.service.d/override.conf -o root -g root -m 644
 
+# Kismet log directory (kismet_site.conf log_prefix): must exist before Kismet starts
+on_chroot <<CHEOF
+	install -d -o wlanpi -g kismet -m 2775 /var/log/kismet
+CHEOF
+
 # Copy config file: wlanpi-state (WLAN Pi Mode)
 copy_overlay /etc/wlanpi-state -o root -g root -m 644
 
