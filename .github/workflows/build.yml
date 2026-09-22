@@ -407,70 +407,6 @@ jobs:
           ls -la processed/
           echo
 
-      - name: Create zips
-        run: |
-          echo "Starting script in directory: $(pwd)"
-          mkdir -p zips
-          echo "Created zips directory"
-
-          LITE=$(find processed -name "wlanpi-os*lite*.img.gz" -print -quit)
-          if [ -n "$LITE" ]; then
-            echo "lite image file found: $LITE"
-            LITE_BASE=$(basename "$LITE")
-            LITE_ZIP="${LITE_BASE%.img.gz}.zip"
-            echo "Creating zip file: $LITE_ZIP"
-
-            pushd processed
-            zip "../zips/$LITE_ZIP" "$(basename "$LITE")"
-            echo "Zip creation exit code: $?"
-            popd
-
-            pushd zips
-            echo "Creating SHA256 sum for lite image"
-            sha256sum "$LITE_ZIP" > "$LITE_ZIP.sha256"
-            popd
-          fi
-
-          FULL=$(find processed -name "wlanpi-os*full*.img.gz" -print -quit)
-          if [ -n "$FULL" ]; then
-            echo "full image file found: $FULL"
-            FULL_BASE=$(basename "$FULL")
-            FULL_ZIP_NAME="${FULL_BASE%.img.gz}.zip"
-            
-            pushd processed
-            zip "../zips/$FULL_ZIP_NAME" "$(basename "$FULL")"
-            echo "Zip creation exit code: $?"
-            popd
-            
-            pushd zips
-            sha256sum "$FULL_ZIP_NAME" > "$FULL_ZIP_NAME.sha256"
-            popd
-          fi
-
-          echo "Checking deploy directory permissions before creating"
-          ls -ld deploy 2>/dev/null || echo "No deploy directory found yet"
-
-          mkdir -p deploy
-          echo "Created deploy directory, checking permissions:"
-          ls -ld deploy 2>/dev/null || true
-          echo "User and groups:"
-          id
-
-          echo "Files in zips directory:"
-          ls -la zips/
-
-          echo "Checking deploy directory contents:"
-          ls -la deploy/ || echo "Cannot list deploy directory"
-
-          sudo cp -v zips/*.zip deploy/
-          sudo cp -v zips/*.sha256 deploy/
-          
-          echo "Checking deploy directory contents:"
-          ls -la deploy/ || echo "Cannot list deploy directory"
-
-          echo "Created these zip files for pre-release:"
-          ls -la zips/
-
       - name: Compare full and lite info files
         if: ${{ github.event.inputs.skip_full_image != 'true' && github.event.inputs.skip_lite_image != 'true' }}
         run: |
@@ -766,25 +702,10 @@ jobs:
           
           echo "A/B partitioned image validation passed!"
     
-      - name: Copy artifacts for release
-        if: ${{ github.event.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
-        run: |
-          mkdir -p release-files
-          cp -v ab-partitioned/*.img.gz release-files/
-          cp -v ab-partitioned/*.sha256 release-files/
-          cp -v ab-partitioned/*.info release-files/ 2>/dev/null || echo "No info files to copy"
-          
       - name: Display A/B partitioned artifacts inventory
         run: |
           echo "A/B partitioned artifacts ready:"
           ls -la ./ab-partitioned
-          echo
-          if [ -d "release-files" ]; then
-            echo "Release files:"
-            ls -la ./release-files
-          else
-            echo "Directory does not exist: release-files"
-          fi
 
       - name: Upload A/B partitioned image
         uses: actions/upload-artifact@v7
