@@ -100,16 +100,23 @@ A successful run on the default branch creates:
 - A GitHub pre-release titled `v26.08-Cortado`. When `skip_full_image=true`,
   the title ends with `[LITE ONLY]`.
 - Assets: `*.img.gz` (the full image is `*.img.xz` when its gzip exceeds
-  GitHub's 2 GiB per-asset limit), `*.sha256`, `*.info`, and `*.sbom.xz`.
+  GitHub's 2 GiB per-asset limit), `*.sha256`, `*.info`, `*.sbom.xz`, and
+  `SHA256SUMS`. GitHub build provenance attestations cover every asset.
 - Generated release notes.
 
 Verify the release:
 
 ```bash
 gh release view 26.08-Cortado
+mkdir 26.08-Cortado
+gh release download 26.08-Cortado --dir 26.08-Cortado
+cd 26.08-Cortado
+gh attestation verify SHA256SUMS --repo WLAN-Pi/pi-gen
+sha256sum --check SHA256SUMS
 ```
 
-Expected output shows the pre-release marker and the uploaded assets.
+Expected output shows the pre-release marker and uploaded assets, a verified
+attestation for `SHA256SUMS`, and `OK` for every asset listed in it.
 
 ## Check package status and release contents
 
