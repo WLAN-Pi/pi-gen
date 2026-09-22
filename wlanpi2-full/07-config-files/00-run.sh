@@ -117,6 +117,9 @@ copy_overlay /etc/wpa_supplicant/wpa_supplicant.conf -o root -g root -m 600
 # Keep Wi-Fi under wlanpi-core control; NetworkManager manages only the wired NIC
 copy_overlay /etc/NetworkManager/conf.d/99-wlanpi-unmanaged-wifi.conf -o root -g root -m 644
 
+# Feed DHCP-provided NTP servers (option 42) to systemd-timesyncd
+copy_overlay /etc/NetworkManager/dispatcher.d/90-wlanpi-ntp -o root -g root -m 755
+
 # Copy config file: avahi-daemon
 copy_overlay /etc/avahi/avahi-daemon.conf -o root -g root -m 644
 
