@@ -110,6 +110,41 @@ gh release view 26.08-Cortado
 
 Expected output shows the pre-release marker and the uploaded assets.
 
+## Check package status and release contents
+
+The **Package status** workflow reports what is in the packagecloud channels
+and what shipped in a release. It is read-only: it never builds, publishes, or
+changes a release.
+
+1. Open the repository **Actions** tab.
+2. Select **Package status**, then choose **Run workflow**.
+3. Set `command`:
+   - `status` compares the `wlanpi/main` and `wlanpi/dev` packagecloud
+     channels for the image distribution and architecture. Use it to see which
+     packages are pending promotion.
+   - `show` lists the packages in a release. Set `release` to the release tag,
+     for example `26.08-Cortado`, and `image` to `lite`, `full`, or `both`.
+4. Read the result in the run summary.
+
+With the GitHub CLI:
+
+```bash
+gh workflow run release-info.yml -f command=status
+gh workflow run release-info.yml -f command=show -f release=26.08-Cortado
+```
+
+The output is tab-separated with a header. For `status` the columns are
+`package`, `main`, `dev`, and `status`. The `status` values are:
+
+- `current`: the same version is in both channels.
+- `pending`: `dev` is newer, so the package is pending promotion.
+- `main-only`: the package is in `main` and not in `dev`.
+- `dev-only`: the package is in `dev` and not in `main`.
+- `main-newer`: `main` is newer than `dev`.
+- `differs`: the host cannot compare the two versions.
+
+For `show` the columns are `image`, `package`, and `version`.
+
 ## Promote a build to stable
 
 Promotion is manual. Automated promotion from `-rc` to final is intentionally

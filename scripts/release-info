@@ -1,0 +1,220 @@
+#!/bin/bash
+# release-info - report packagecloud channel state and release contents
+#
+# Usage:
+#   release-info status [--repo <repo>] [--dist <dist>] [--arch <arch>]
+#                       [--main <channel>] [--dev <channel>]
+#   release-info show <release> [--image both|lite|full]
+#
+# Output is tab-separated with a header, so it pipes cleanly:
+#   status: package<TAB>main<TAB>dev<TAB>status
+#   show:   image<TAB>package<TAB>version
+#
+# Author: Josh Schmelzle
+# License: BSD-3
+
+set -euo pipefail
+
+PC_BASE="https://packagecloud.io/wlanpi"
+REPO="debian"
+ARCH="arm64"
+MAIN_CHANNEL="main"
+DEV_CHANNEL="dev"
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Distribution default follows the image config (config: RELEASE='trixie').
+DIST="trixie"
+CONFIG_FILE="$SCRIPT_DIR/../config"
+if [ -f "$CONFIG_FILE" ]; then
+    configured=$(grep -E "^RELEASE=" "$CONFIG_FILE" | head -n 1 | cut -d= -f2 | tr -d "'\"")
+    if [ -n "$configured" ]; then
+        DIST="$configured"
+    fi
+fi
+
+if command -v dpkg >/dev/null 2>&1; then
+    HAVE_DPKG=true
+else
+    HAVE_DPKG=false
+fi
+
+TMP_DIR=$(mktemp -d)
+trap 'rm -rf "$TMP_DIR"' EXIT
+
+usage() {
+    cat <<'EOF'
+Usage:
+  release-info status [--repo <repo>] [--dist <dist>] [--arch <arch>] [--main <channel>] [--dev <channel>]
+  release-info show <release> [--image both|lite|full]
+
+status  Compare the wlanpi main and dev packagecloud channels.
+show    List the packages in a release's .info assets.
+EOF
+}
+
+# True when $1 is a strictly newer Debian version than $2.
+version_gt() {
+    local a="$1"
+    local b="$2"
+
+    [ "$a" = "$b" ] && return 1
+    if [ "$HAVE_DPKG" = "true" ]; then
+        dpkg --compare-versions "$a" gt "$b" 2>/dev/null
+        return $?
+    fi
+    # shortcut: no dpkg (non-Debian host); GNU version sort is close enough.
+    [ "$(printf '%s\n%s\n' "$b" "$a" | sort -V 2>/dev/null | tail -n 1)" = "$a" ]
+}
+
+# Read a Debian Packages stream on stdin and print the newest version of each
+# package as "package<TAB>version", sorted by package name. packagecloud keeps
+# every published version, so the newest must be selected.
+newest_packages() {
+    local line pkg="" ver cur
+    local -A best=()
+
+    while IFS= read -r line; do
+        case "$line" in
+            "Package: "*)
+                pkg="${line#Package: }"
+                pkg="${pkg%%:*}"
+                ;;
+            "Version: "*)
+                ver="${line#Version: }"
+                [ -n "$pkg" ] || continue
+                cur="${best[$pkg]:-}"
+                if [ -z "$cur" ] || version_gt "$ver" "$cur"; then
+                    best[$pkg]="$ver"
+                fi
+                ;;
+        esac
+    done
+
+    for pkg in "${!best[@]}"; do
+        printf '%s\t%s\n' "$pkg" "${best[$pkg]}"
+    done | LC_ALL=C sort
+}
+
+# Fetch one channel index and print its newest packages.
+fetch_channel() {
+    local channel="$1"
+    local url="$PC_BASE/$channel/$REPO/dists/$DIST/main/binary-$ARCH/Packages.gz"
+
+    if ! curl -fsSL "$url" | gzip -dc | newest_packages; then
+        echo "release-info: failed to fetch $url" >&2
+        return 1
+    fi
+}
+
+status_report() {
+    local main_file="$TMP_DIR/main"
+    local dev_file="$TMP_DIR/dev"
+    local pkg mver dver status
+
+    fetch_channel "$MAIN_CHANNEL" > "$main_file"
+    fetch_channel "$DEV_CHANNEL" > "$dev_file"
+
+    printf 'package\tmain\tdev\tstatus\n'
+
+    awk -F'\t' '
+        FNR == NR { main[$1] = $2; next }
+        { dev[$1] = $2 }
+        END {
+            for (p in main) seen[p] = 1
+            for (p in dev) seen[p] = 1
+            for (p in seen) printf "%s|%s|%s\n", p, (p in main ? main[p] : ""), (p in dev ? dev[p] : "")
+        }
+    ' "$main_file" "$dev_file" | LC_ALL=C sort -t'|' -k1,1 | while IFS='|' read -r pkg mver dver; do
+        if [ -z "$mver" ]; then
+            status="dev-only"
+        elif [ -z "$dver" ]; then
+            status="main-only"
+        elif [ "$mver" = "$dver" ]; then
+            status="current"
+        elif version_gt "$dver" "$mver"; then
+            status="pending"
+        elif version_gt "$mver" "$dver"; then
+            status="main-newer"
+        else
+            status="differs"
+        fi
+        printf '%s\t%s\t%s\t%s\n' "$pkg" "${mver:--}" "${dver:--}" "$status"
+    done
+}
+
+show_report() {
+    local release="$1"
+    local image="$2"
+    local dir="$TMP_DIR/show"
+    local img file
+
+    mkdir -p "$dir"
+
+    if ! gh release view "$release" >/dev/null 2>&1; then
+        echo "release-info: release not found: $release" >&2
+        return 1
+    fi
+    if ! gh release download "$release" --pattern '*.info' --dir "$dir" >/dev/null 2>&1; then
+        echo "release-info: no .info assets in release: $release" >&2
+        return 1
+    fi
+
+    printf 'image\tpackage\tversion\n'
+
+    for img in lite full; do
+        if [ "$image" != "both" ] && [ "$image" != "$img" ]; then
+            continue
+        fi
+        file=$(find "$dir" -name "*-$img.info" -print -quit)
+        if [ -z "$file" ]; then
+            echo "release-info: no $img image in release: $release" >&2
+            continue
+        fi
+        grep -E "^(ii|hi) " "$file" | awk -v image="$img" -F' +' '{name=$2; sub(/:.*/, "", name); print image "\t" name "\t" $3}'
+    done
+}
+
+status_cmd() {
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --repo) REPO="$2"; shift 2 ;;
+            --dist) DIST="$2"; shift 2 ;;
+            --arch) ARCH="$2"; shift 2 ;;
+            --main) MAIN_CHANNEL="$2"; shift 2 ;;
+            --dev) DEV_CHANNEL="$2"; shift 2 ;;
+            *) echo "release-info: unknown option for status: $1" >&2; exit 2 ;;
+        esac
+    done
+    status_report
+}
+
+show_cmd() {
+    local release=""
+    local image="both"
+
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --image) image="$2"; shift 2 ;;
+            --*) echo "release-info: unknown option for show: $1" >&2; exit 2 ;;
+            *) release="$1"; shift ;;
+        esac
+    done
+
+    if [ -z "$release" ]; then
+        echo "release-info: show requires a release tag" >&2
+        exit 2
+    fi
+    case "$image" in
+        both | lite | full) ;;
+        *) echo "release-info: --image must be both, lite, or full" >&2; exit 2 ;;
+    esac
+    show_report "$release" "$image"
+}
+
+case "${1:-}" in
+    status) shift; status_cmd "$@" ;;
+    show) shift; show_cmd "$@" ;;
+    -h | --help) usage ;;
+    *) usage >&2; exit 2 ;;
+esac

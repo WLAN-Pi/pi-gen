@@ -1,0 +1,64 @@
+name: Package status
+
+on:
+  workflow_dispatch:
+    inputs:
+      command:
+        description: 'status = compare wlanpi main vs dev; show = list packages in a release'
+        required: true
+        type: choice
+        options:
+          - status
+          - show
+        default: status
+
+      release:
+        description: 'Release tag for show, for example 26.08-Cortado'
+        required: false
+        type: string
+
+      image:
+        description: 'Which image(s) to list for show'
+        required: false
+        type: choice
+        options:
+          - both
+          - lite
+          - full
+        default: both
+
+permissions:
+  contents: read
+
+jobs:
+  report:
+    name: Report
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Report
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COMMAND: ${{ inputs.command }}
+          RELEASE: ${{ inputs.release }}
+          IMAGE: ${{ inputs.image }}
+        run: |
+          set -euo pipefail
+          case "$COMMAND" in
+            status)
+              bash scripts/release-info status | tee -a "$GITHUB_STEP_SUMMARY"
+              ;;
+            show)
+              if [ -z "$RELEASE" ]; then
+                echo "::error::the release input is required for show"
+                exit 1
+              fi
+              bash scripts/release-info show "$RELEASE" --image "$IMAGE" | tee -a "$GITHUB_STEP_SUMMARY"
+              ;;
+            *)
+              echo "::error::unknown command: $COMMAND"
+              exit 1
+              ;;
+          esac
