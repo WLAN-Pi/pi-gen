@@ -43,7 +43,8 @@ native build):
 ```
 
 Verify success: finished images appear in `deploy/` as `.img.gz` files
-with matching `.sha256` checksums.
+(the full image is `.img.xz` when its gzip would exceed GitHub's 2 GiB
+release-asset limit) with matching `.sha256` checksums.
 
 Builds are incremental: stage state persists under `work/wlanpi-os/`
 and re-runs reuse it. If a stage edit appears to do nothing, remove the
