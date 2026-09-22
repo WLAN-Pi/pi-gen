@@ -236,6 +236,15 @@ If a build is bad, cut a new sequence for the same month, or a new point
 release. Do not delete, move, or retag the bad release. Releases are
 immutable.
 
+To hide a mistaken or test-only pre-release without deleting it, convert it
+to a draft:
+
+```bash
+gh release edit 26.09-dev.2-CI_TEST_ONLY --draft
+```
+
+This preserves the tag and release assets.
+
 ## Related
 
 - [CI.md](CI.md): build pipeline and input reference.
