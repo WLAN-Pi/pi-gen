@@ -95,7 +95,7 @@ if hash syft 2>/dev/null; then
 	syft scan dir:"${ROOTFS_DIR}" \
 		--base-path="${ROOTFS_DIR}" \
 		--source-name="${IMG_NAME}${IMG_SUFFIX}" \
-		--source-version="${IMG_DATE}" \
+		--source-version="${WLANPI_FULL_VERSION}" \
 		-o spdx-json="${SBOM_FILE}"
 fi
 
