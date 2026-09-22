@@ -51,9 +51,10 @@ The git tag is `FULL_VERSION` with no `v` prefix. The release title adds the
 2. `build-image`: builds the requested images, generates the SBOM and
    package manifest, scans the SBOM for known vulnerabilities, and uploads
    them as artifacts. The vulnerability reports are informational and do not
-   fail the build when findings exist. The lite image is skipped when
-   `skip_lite_image=true`; the full image is skipped when
-   `skip_full_image=true`.
+   fail the build when findings exist. If the scanner fails, the build
+   continues and opens a GitHub issue linked to the workflow run. The lite
+   image is skipped when `skip_lite_image=true`; the full image is skipped
+   when `skip_full_image=true`.
 3. `ab-partition-image`: runs when `ab_partition=true` and the lite image
    was built; converts the lite image to the A/B layout and validates it.
 4. `release`: runs when `build-prep` and `build-image` succeed and
