@@ -1,24 +1,30 @@
-name: Package status
+name: Release info
 
 on:
   workflow_dispatch:
     inputs:
       command:
-        description: 'status = compare wlanpi main vs dev; show = list packages in a release'
+        description: 'status = promotion readiness; show = release packages; compare = release differences'
         required: true
         type: choice
         options:
           - status
           - show
+          - compare
         default: status
 
       release:
-        description: 'Release tag for show, for example 26.08-Cortado'
+        description: 'Release tag for show or compare'
+        required: false
+        type: string
+
+      baseline:
+        description: 'Baseline tag for compare; defaults to the previous release'
         required: false
         type: string
 
       image:
-        description: 'Which image(s) to list for show'
+        description: 'Which image(s) to inspect'
         required: false
         type: choice
         options:
@@ -38,24 +44,60 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
+      - name: Install compare dependencies
+        if: inputs.command == 'compare'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y dpkg-dev
+          mkdir -p "$HOME/.local/bin"
+          curl -sSfL https://raw.githubusercontent.com/anchore/grype/v0.119.0/install.sh | sh -s -- -b "$HOME/.local/bin" v0.119.0
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
       - name: Report
         env:
           GH_TOKEN: ${{ github.token }}
           COMMAND: ${{ inputs.command }}
           RELEASE: ${{ inputs.release }}
+          BASELINE: ${{ inputs.baseline }}
           IMAGE: ${{ inputs.image }}
         run: |
           set -euo pipefail
+          render_table() {
+            awk -F '\t' '
+              function table_header() { printf "| %s |\n", columns; rule=columns; gsub(/[^\t]+/, "---", rule); printf "| %s |\n", rule }
+              /^#/ { sub(/^# /, ""); print "\n" $0 "\n"; restart=1; next }
+              !columns { columns=$0; table_header(); restart=0; next }
+              { if (restart) { table_header(); restart=0 }; printf "| %s |\n", $0 }
+            ' | tr '\t' '|'
+          }
           case "$COMMAND" in
             status)
-              bash scripts/release-info status | tee -a "$GITHUB_STEP_SUMMARY"
+              bash scripts/release-info status | tee /dev/stderr | render_table >> "$GITHUB_STEP_SUMMARY"
               ;;
             show)
               if [ -z "$RELEASE" ]; then
                 echo "::error::the release input is required for show"
                 exit 1
               fi
-              bash scripts/release-info show "$RELEASE" --image "$IMAGE" | tee -a "$GITHUB_STEP_SUMMARY"
+              bash scripts/release-info show "$RELEASE" --image "$IMAGE" | tee /dev/stderr | render_table >> "$GITHUB_STEP_SUMMARY"
+              ;;
+            compare)
+              if [ -z "$RELEASE" ]; then
+                echo "::error::the release input is required for compare"
+                exit 1
+              fi
+              if [ -z "$BASELINE" ]; then
+                # shellcheck disable=SC2016 # jq variables are intentionally single-quoted.
+                BASELINE=$(gh release list --limit 100 --json tagName,createdAt,isDraft --jq \
+                  'map(select(.isDraft == false)) | sort_by(.createdAt) | map(.tagName) as $tags | ($tags | index(env.RELEASE)) as $i | if $i > 0 then $tags[$i - 1] else empty end')
+              fi
+              if [ -z "$BASELINE" ]; then
+                echo "::error::could not determine a baseline release"
+                exit 1
+              fi
+              bash scripts/release-info compare "$BASELINE" "$RELEASE" --image "$IMAGE" | tee compare.tsv | tee /dev/stderr | render_table >> "$GITHUB_STEP_SUMMARY"
+              echo >> "$GITHUB_STEP_SUMMARY"
+              bash scripts/release-info changes < compare.tsv | tee -a "$GITHUB_STEP_SUMMARY"
               ;;
             *)
               echo "::error::unknown command: $COMMAND"

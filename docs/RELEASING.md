@@ -118,20 +118,26 @@ sha256sum --check SHA256SUMS
 Expected output shows the pre-release marker and uploaded assets, a verified
 attestation for `SHA256SUMS`, and `OK` for every asset listed in it.
 
-## Check package status and release contents
+## Check release information
 
-The **Package status** workflow reports what is in the packagecloud channels
-and what shipped in a release. It is read-only: it never builds, publishes, or
-changes a release.
+The **Release info** workflow reports what is in the packagecloud channels,
+what shipped in a release, and what changed between two releases. It is
+read-only: it never builds, publishes, or changes a release.
 
 1. Open the repository **Actions** tab.
-2. Select **Package status**, then choose **Run workflow**.
+2. Select **Release info**, then choose **Run workflow**.
 3. Set `command`:
-   - `status` compares the `wlanpi/main` and `wlanpi/dev` packagecloud
-     channels for the image distribution and architecture. Use it to see which
-     packages are pending promotion.
-   - `show` lists the packages in a release. Set `release` to the release tag,
-     for example `26.08-Cortado`, and `image` to `lite`, `full`, or `both`.
+    - `status` compares the `wlanpi/main` and `wlanpi/dev` packagecloud
+      channels for the image distribution and architecture. The `shipped`
+      column shows the version in the newest release (or the release passed to
+      `--release`). A `dev-only` or `pending` package that shipped must be
+      promoted before a main-only build, or that build will regress.
+    - `show` lists the packages in a release. Set `release` to the release tag,
+      for example `26.08-Cortado`, and `image` to `lite`, `full`, or `both`.
+    - `compare` reports package and vulnerability changes between `baseline`
+      and `release`, then prints Debian changelog entries for added and upgraded
+      WLAN Pi packages. If `baseline` is empty, the workflow uses the release
+      created immediately before `release`.
 4. Read the result in the run summary.
 
 With the GitHub CLI:
@@ -139,10 +145,13 @@ With the GitHub CLI:
 ```bash
 gh workflow run release-info.yml -f command=status
 gh workflow run release-info.yml -f command=show -f release=26.08-Cortado
+gh workflow run release-info.yml -f command=compare \
+  -f baseline=26.10-dev.1-DeadEye -f release=26.10-dev.2-DeadEye
 ```
 
-The output is tab-separated with a header. For `status` the columns are
-`package`, `main`, `dev`, and `status`. The `status` values are:
+The script output is tab-separated with a header; the workflow renders it as
+a Markdown table. For `status` the columns are `package`, `main`, `dev`,
+`shipped`, and `status`. The `status` values are:
 
 - `current`: the same version is in both channels.
 - `pending`: `dev` is newer, so the package is pending promotion.
@@ -152,6 +161,22 @@ The output is tab-separated with a header. For `status` the columns are
 - `differs`: the host cannot compare the two versions.
 
 For `show` the columns are `image`, `package`, and `version`.
+
+For `compare` the columns are `kind`, `image`, `name`, `baseline`, `release`,
+`status`, and `note`. Package status is `added`, `removed`, `upgraded`, or
+`downgraded`. Vulnerability status is `introduced` or `resolved`; `note`
+contains its severity and package type. Run the script locally to print the
+same comparison and the package changelogs:
+
+```bash
+scripts/release-info compare 26.10-dev.1-DeadEye 26.10-dev.2-DeadEye |
+  tee compare.tsv
+scripts/release-info changes < compare.tsv
+```
+
+Until the first 26.x final release exists, generated release notes have no
+package comparison because the previous stable release uses legacy `.info`
+asset names.
 
 ## Promote a build to stable
 
