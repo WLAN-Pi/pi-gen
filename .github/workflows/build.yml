@@ -407,14 +407,6 @@ jobs:
           ls -la processed/
           echo
 
-      - name: Scan SBOMs for vulnerabilities
-        run: |
-          for SBOM in processed/*.sbom.xz; do
-            [ -f "$SBOM" ] || continue
-            REPORT="${SBOM%.sbom.xz}.cve.txt"
-            xz -dc "$SBOM" | grype -o table > "$REPORT"
-          done
-
       - name: Create zips
         run: |
           echo "Starting script in directory: $(pwd)"
@@ -545,6 +537,14 @@ jobs:
           
           echo
           echo "Package differences saved to package-diffs/package-differences.log"
+
+      - name: Scan SBOMs for vulnerabilities
+        run: |
+          for SBOM in processed/*.sbom.xz; do
+            [ -f "$SBOM" ] || continue
+            REPORT="${SBOM%.sbom.xz}.cve.txt"
+            xz -dc "$SBOM" | grype -o table > "$REPORT"
+          done
 
       - name: Upload full image
         if: ${{ github.event.inputs.skip_full_image != 'true' }}
