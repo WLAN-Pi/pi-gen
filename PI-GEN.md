@@ -109,6 +109,10 @@ The following environment variables are supported:
    * `gz` to deploy a gzipped image (`.img.gz`).
    * `xz` to deploy a xzipped image (`.img.xz`).
 
+   In CI the build uses `gz`, then recompresses the **full** image to
+   `.img.xz` when its `.img.gz` exceeds GitHub's 2 GiB release-asset limit.
+   The lite image always stays `.img.gz`.
+
 
  * `DEPLOY_ZIP` (Deprecated)
 

@@ -99,7 +99,8 @@ A successful run on the default branch creates:
 - A git tag equal to the full version, for example `26.08-Cortado`.
 - A GitHub pre-release titled `v26.08-Cortado`. When `skip_full_image=true`,
   the title ends with `[LITE ONLY]`.
-- Assets: `*.img.gz`, `*.sha256`, `*.info`, and `*.sbom.xz`.
+- Assets: `*.img.gz` (the full image is `*.img.xz` when its gzip exceeds
+  GitHub's 2 GiB per-asset limit), `*.sha256`, `*.info`, and `*.sbom.xz`.
 - Generated release notes.
 
 Verify the release:

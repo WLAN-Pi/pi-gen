@@ -53,7 +53,8 @@ sudo -E ./build.sh
   faster, but see the gotcha below.
 - Logs: pi-gen writes `work/wlanpi-os/build.log`; a failed run prints a
   Build FAILED banner with timestamps.
-- Output lands in `deploy/`: compressed images (`.img.gz`), package manifests
+- Output lands in `deploy/`: compressed images (`.img.gz`, or `.img.xz` for
+  the full image when its gzip exceeds 2 GiB), package manifests
   (`.info`), and checksums.
 
 There is also `build-docker.sh` for containerized builds (used by CI;
