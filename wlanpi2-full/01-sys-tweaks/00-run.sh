@@ -21,5 +21,8 @@ usermod -aG adm ${FIRST_USER_NAME}
 
 # Load i2c module at boot
 echo "i2c-dev" >> /etc/modules
+
+# Headless by default: no boot splash. wlanpi-gui enable unmasks these.
+systemctl mask plymouth-start.service systemd-ask-password-plymouth.path || true
 EOF
 

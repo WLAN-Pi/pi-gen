@@ -22,4 +22,8 @@ on_chroot <<CHEOF
 	systemctl enable cockpit.socket
 	systemctl disable ser2net || true
 	systemctl stop ser2net 2>/dev/null || true
+	# isc-dhcp-server comes in as a dependency of the mode packages
+	# (wlanpi-server, wlanpi-hotspot) and fails at boot in classic mode with
+	# "no subnet declaration". The mode switchers enable it when needed.
+	systemctl disable isc-dhcp-server || true
 CHEOF

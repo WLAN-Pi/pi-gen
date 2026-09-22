@@ -60,6 +60,11 @@ rm -f "${ROOTFS_DIR}/etc/ssh/"ssh_host_*_key*
 install -d "${ROOTFS_DIR}/etc/systemd/system/sshd-keygen.service.d"
 install -m 644 files/sshd-keygen-anyboot.conf "${ROOTFS_DIR}/etc/systemd/system/sshd-keygen.service.d/"
 
+# Headless by default: no boot splash. wlanpi-gui enable unmasks these.
+on_chroot << EOF
+systemctl mask plymouth-start.service systemd-ask-password-plymouth.path || true
+EOF
+
 sed -i "s/PLACEHOLDER//" "${ROOTFS_DIR}/etc/default/keyboard"
 on_chroot << EOF
 DEBIAN_FRONTEND=noninteractive dpkg-reconfigure keyboard-configuration

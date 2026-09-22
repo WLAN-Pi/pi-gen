@@ -14,11 +14,13 @@ dtparam=audio=on
 # Additional overlays and parameters are documented
 # /boot/firmware/overlays/README
 
-# Automatically load overlays for detected cameras
-camera_auto_detect=1
-
-# Automatically load overlays for detected DSI displays
-display_auto_detect=1
+# Disable automatic probing for cameras and DSI panels: the WLAN Pi is
+# headless and has neither, and the firmware probe costs boot time. HDMI is
+# still auto-detected by the firmware with display_auto_detect=0, so the
+# optional desktop (wlanpi-gui enable) is unaffected. The M4+ front-panel
+# display is SPI (ST7735, driven by wlanpi-fpms), not DSI.
+camera_auto_detect=0
+display_auto_detect=0
 
 # Enable DRM VC4 V3D driver. Also loads snd-soc-hdmi-codec, which
 # wlanpi-model relies on to identify the M4 (lsmod | grep hdmi)
