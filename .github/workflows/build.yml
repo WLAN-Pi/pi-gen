@@ -267,8 +267,9 @@ jobs:
             systemd-container \
             arch-test
           
-          # requires for sbom generation
-          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
+          # Required for SBOM generation and vulnerability reports.
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/v1.52.0/install.sh | sh -s -- -b /usr/local/bin v1.52.0
+          curl -sSfL https://raw.githubusercontent.com/anchore/grype/v0.119.0/install.sh | sh -s -- -b /usr/local/bin v0.119.0
       
       - name: Display build configuration parameters
         run: |
@@ -473,6 +474,14 @@ jobs:
           echo
           echo "Package differences saved to package-diffs/package-differences.log"
 
+      - name: Scan SBOMs for vulnerabilities
+        run: |
+          for SBOM in processed/*.sbom.xz; do
+            [ -f "$SBOM" ] || continue
+            REPORT="${SBOM%.sbom.xz}.cve.txt"
+            xz -dc "$SBOM" | grype -o table > "$REPORT"
+          done
+
       - name: Upload full image
         if: ${{ github.event.inputs.skip_full_image != 'true' }}
         uses: actions/upload-artifact@v7
@@ -504,6 +513,12 @@ jobs:
           path: |
             processed/*.info
             processed/*.sbom.xz
+
+      - name: Upload vulnerability reports
+        uses: actions/upload-artifact@v7
+        with:
+          name: wlanpi-os-${{ env.version }}_cve
+          path: processed/*.cve.txt
 
       - name: Upload job logs
         if: always()

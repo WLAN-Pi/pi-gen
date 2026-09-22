@@ -49,8 +49,10 @@ The git tag is `FULL_VERSION` with no `v` prefix. The release title adds the
 
 1. `build-prep`: resolves the package cloud repos and computes the version.
 2. `build-image`: builds the requested images, generates the SBOM and
-   package manifest, and uploads them as artifacts. The lite image is
-   skipped when `skip_lite_image=true`; the full image is skipped when
+   package manifest, scans the SBOM for known vulnerabilities, and uploads
+   them as artifacts. The vulnerability reports are informational and do not
+   fail the build when findings exist. The lite image is skipped when
+   `skip_lite_image=true`; the full image is skipped when
    `skip_full_image=true`.
 3. `ab-partition-image`: runs when `ab_partition=true` and the lite image
    was built; converts the lite image to the A/B layout and validates it.
