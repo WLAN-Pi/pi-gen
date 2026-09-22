@@ -1,0 +1,54 @@
+#!/bin/bash
+#
+# Feed DHCP-provided NTP servers (DHCP option 42) to systemd-timesyncd.
+#
+# NetworkManager does not forward DHCP NTP servers to systemd-timesyncd, and
+# timesyncd's network-state integration only fires for systemd-networkd-managed
+# links, so writing a config drop-in and restarting timesyncd is not enough (it
+# stays idle waiting for a network event). Use the runtime NTP-server API
+# (systemd >= 256), which connects immediately.
+#
+# NetworkManager calls this as: 90-wlanpi-ntp <interface> <action>
+# DHCP options are exposed as DHCP4_<option-name> / DHCP6_<option-name>.
+
+set -u
+
+IFACE="${1:-}"
+ACTION="${2:-}"
+MARKER="/run/wlanpi-dhcp-ntp.iface"
+
+set_runtime_servers() {
+    # "$@" = servers; with no arguments, clears the runtime list.
+    busctl call org.freedesktop.timesync1 /org/freedesktop/timesync1 \
+        org.freedesktop.timesync1.Manager SetRuntimeNTPServers as "$#" "$@" \
+        >/dev/null 2>&1 || true
+}
+
+case "${ACTION}" in
+    up|dhcp4-change|dhcp6-change)
+        servers=()
+        # shellcheck disable=SC2086
+        for s in ${DHCP4_NTP_SERVERS:-} ${DHCP6_NTP_SERVERS:-}; do
+            servers+=("$s")
+        done
+        if [ "${#servers[@]}" -gt 0 ]; then
+            set_runtime_servers "${servers[@]}"
+            printf '%s\n' "${IFACE}" > "${MARKER}"
+        elif [ "$(cat "${MARKER}" 2>/dev/null)" = "${IFACE}" ]; then
+            # This interface previously provided NTP; its lease no longer does.
+            set_runtime_servers
+            rm -f "${MARKER}"
+        fi
+        ;;
+    down)
+        if [ "$(cat "${MARKER}" 2>/dev/null)" = "${IFACE}" ]; then
+            set_runtime_servers
+            rm -f "${MARKER}"
+        fi
+        ;;
+    *)
+        exit 0
+        ;;
+esac
+
+exit 0
