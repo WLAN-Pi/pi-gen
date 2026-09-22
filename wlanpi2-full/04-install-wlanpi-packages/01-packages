@@ -3,7 +3,7 @@ wlanpi-common
 wlanpi-core
 wlanpi-fpms
 wlanpi-mcp
-wlanpi-grafana
+#wlanpi-grafana (requires Grafana; omitted to keep the full image below GitHub's 2 GiB asset limit)
 wlanpi-hotspot
 #wlanpi-hwtest (not in packagecloud repo)
 wlanpi-librespeed-cli

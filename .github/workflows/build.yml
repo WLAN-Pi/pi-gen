@@ -380,21 +380,10 @@ jobs:
               fi
               
               NEW="wlanpi-os-$VERSION-$TYPE.img.gz"
-              if [[ "$TYPE" == "full" ]]; then
-                IMG_BYTES=$(stat -c%s "$IMG")
-                # GitHub release assets are capped at 2 GiB (2147483648 B) per
-                # file, so compress the full image with xz when the gzip is
-                # over. The lite image stays gzip: it is well under the cap and
-                # the on-device update-alternate-partition script needs .gz.
-                if [ "$IMG_BYTES" -ge 2147483648 ]; then
-                  NEW="wlanpi-os-$VERSION-$TYPE.img.xz"
-                  echo "Full image is ${IMG_BYTES} bytes (>= 2 GiB); compressing to xz: $NEW"
-                  gzip -dc "$IMG" | xz -6 -T0 --memlimit-compress=50% -c > "processed/$NEW"
-                else
-                  cp "$IMG" "processed/$NEW"
-                fi
-              else
-                cp "$IMG" "processed/$NEW"
+              cp "$IMG" "processed/$NEW"
+              if [ "$(stat -c%s "processed/$NEW")" -ge 2147483648 ]; then
+                echo "::error::$NEW exceeds GitHub's 2 GiB release asset limit"
+                exit 1
               fi
 
               pushd processed
@@ -505,9 +494,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: wlanpi-os-${{ env.version }}-full
-          path: |
-            processed/wlanpi-os*full*.img.gz
-            processed/wlanpi-os*full*.img.xz
+          path: processed/wlanpi-os*full*.img.gz
           if-no-files-found: ignore
 
       - name: Upload lite image
@@ -792,7 +779,7 @@ jobs:
       - name: Prepare release directory
         run: |
           mkdir -p release-files
-          find all-artifacts -type f \( -name "*.img.gz" -o -name "*.img.xz" \) -exec cp {} release-files/ \;
+          find all-artifacts -name "*.img.gz" -exec cp {} release-files/ \;
           find all-artifacts -name "*.sha256" -exec cp {} release-files/ \;
           find all-artifacts -name "*.info" -exec cp {} release-files/ \;
           find all-artifacts -name "*.sbom.xz" -exec cp {} release-files/ \;
