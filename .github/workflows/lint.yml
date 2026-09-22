@@ -1,8 +1,25 @@
 name: Lint
 
 on:
-  pull_request:
+  # Allow manual runs of workflow from Actions tab
+  workflow_dispatch:
+
   push:
+    paths-ignore: # ignore files that don't change build output
+      - '**/*.md'
+      - .github/dependabot.yml
+      - .gitignore
+      - LICENSE
+  pull_request:
+    paths-ignore: # ignore files that don't change build output
+      - '**/*.md'
+      - .github/dependabot.yml
+      - .gitignore
+      - LICENSE
+
+permissions:
+  contents: read
+  actions: read
 
 jobs:
   shellcheck:
@@ -16,8 +33,36 @@ jobs:
       - name: Install shellcheck
         run: sudo apt-get update && sudo apt-get install -y shellcheck
 
+      # Every tracked shell script, plus any tracked executable with a shell
+      # shebang (the profile.d snippets and /usr/bin links are covered by the
+      # latter).
       - name: Run shellcheck (warning severity)
         run: |
           { git ls-files '*.sh'
             git ls-files -s | awk '$1 == "100755" {print $4}' | xargs -r grep -l '^#!.*sh'
           } | sort -u | xargs -r shellcheck -S warning
+
+  actionlint:
+    name: actionlint
+    runs-on: 'ubuntu-24.04-arm'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Run actionlint
+        uses: raven-actions/actionlint@v2
+
+  slack-workflow-status:
+    if: ${{ always() && github.repository_owner == 'WLAN-Pi' && ! github.event.pull_request.head.repo.fork }}
+    name: Post Workflow Status to Slack
+    needs:
+      - shellcheck
+      - actionlint
+    runs-on: 'ubuntu-24.04'
+    steps:
+      - name: Slack Workflow Notification
+        uses: Gamesight/slack-workflow-status@master
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          slack_webhook_url: ${{ secrets.SLACK_WEBHOOK_URL }}
