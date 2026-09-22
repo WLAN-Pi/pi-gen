@@ -1,15 +1,5 @@
 #!/bin/bash
 # release-info - report packagecloud channel state and release contents
-#
-# Usage:
-#   release-info status [--repo <repo>] [--dist <dist>] [--arch <arch>]
-#                       [--main <channel>] [--dev <channel>]
-#   release-info show <release> [--image both|lite|full]
-#
-# Output is tab-separated with a header, so it pipes cleanly:
-#   status: package<TAB>main<TAB>dev<TAB>status
-#   show:   image<TAB>package<TAB>version
-#
 # Author: Josh Schmelzle
 # License: BSD-3
 
@@ -22,15 +12,11 @@ MAIN_CHANNEL="main"
 DEV_CHANNEL="dev"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
-# Distribution default follows the image config (config: RELEASE='trixie').
 DIST="trixie"
 CONFIG_FILE="$SCRIPT_DIR/../config"
 if [ -f "$CONFIG_FILE" ]; then
-    configured=$(grep -E "^RELEASE=" "$CONFIG_FILE" | head -n 1 | cut -d= -f2 | tr -d "'\"")
-    if [ -n "$configured" ]; then
-        DIST="$configured"
-    fi
+    configured=$(grep -E "^RELEASE=" "$CONFIG_FILE" | head -n 1 | cut -d= -f2 | tr -d "'\"" || true)
+    [ -z "$configured" ] || DIST="$configured"
 fi
 
 if command -v dpkg >/dev/null 2>&1; then
@@ -45,18 +31,20 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 usage() {
     cat <<'EOF'
 Usage:
-  release-info status [--repo <repo>] [--dist <dist>] [--arch <arch>] [--main <channel>] [--dev <channel>]
+  release-info status [--release <tag>] [--repo <repo>] [--dist <dist>] [--arch <arch>] [--main <channel>] [--dev <channel>]
   release-info show <release> [--image both|lite|full]
+  release-info compare <baseline> <release> [--image both|lite|full]
+  release-info changes < compare.tsv
 
-status  Compare the wlanpi main and dev packagecloud channels.
-show    List the packages in a release's .info assets.
+status   Compare wlanpi main and dev, including the version in a release.
+show     List packages in a release's .info assets.
+compare  Compare packages and vulnerabilities in two releases.
+changes  Render package changelogs for added and upgraded compare rows.
 EOF
 }
 
-# True when $1 is a strictly newer Debian version than $2.
 version_gt() {
-    local a="$1"
-    local b="$2"
+    local a="$1" b="$2"
 
     [ "$a" = "$b" ] && return 1
     if [ "$HAVE_DPKG" = "true" ]; then
@@ -67,19 +55,13 @@ version_gt() {
     [ "$(printf '%s\n%s\n' "$b" "$a" | sort -V 2>/dev/null | tail -n 1)" = "$a" ]
 }
 
-# Read a Debian Packages stream on stdin and print the newest version of each
-# package as "package<TAB>version", sorted by package name. packagecloud keeps
-# every published version, so the newest must be selected.
 newest_packages() {
     local line pkg="" ver cur
     local -A best=()
 
     while IFS= read -r line; do
         case "$line" in
-            "Package: "*)
-                pkg="${line#Package: }"
-                pkg="${pkg%%:*}"
-                ;;
+            "Package: "*) pkg="${line#Package: }"; pkg="${pkg%%:*}" ;;
             "Version: "*)
                 ver="${line#Version: }"
                 [ -n "$pkg" ] || continue
@@ -96,125 +78,320 @@ newest_packages() {
     done | LC_ALL=C sort
 }
 
-# Fetch one channel index and print its newest packages.
-fetch_channel() {
-    local channel="$1"
-    local url="$PC_BASE/$channel/$REPO/dists/$DIST/main/binary-$ARCH/Packages.gz"
+channel_url() {
+    printf '%s/%s/%s/dists/%s/main/binary-%s/Packages.gz' \
+        "$PC_BASE" "$1" "$REPO" "$DIST" "$ARCH"
+}
 
+fetch_channel() {
+    local url
+    url=$(channel_url "$1")
     if ! curl -fsSL "$url" | gzip -dc | newest_packages; then
         echo "release-info: failed to fetch $url" >&2
         return 1
     fi
 }
 
+extract_packages() {
+    grep -E "^(ii|hi) " "$1" | awk -F' +' '{name=$2; sub(/:.*/, "", name); print name "\t" $3}' | LC_ALL=C sort
+}
+
+download_release_info() {
+    local release="$1" dir="$2"
+    mkdir -p "$dir"
+    gh release download "$release" --pattern '*.info' --dir "$dir" >/dev/null 2>&1
+}
+
+find_image_file() {
+    find "$1" -name "*-$2.$3" -print -quit
+}
+
+release_context() {
+    local release="$1" info="$2" published commit
+    published=$(gh release view "$release" --json publishedAt --jq .publishedAt 2>/dev/null || printf unknown)
+    commit=$(awk -F', ' '/^Generated using / {print $(NF-1); exit}' "$info")
+    printf '# %s, published %s, pi-gen %s\n' "$release" "$published" "${commit:-unknown}"
+}
+
 status_report() {
-    local main_file="$TMP_DIR/main"
-    local dev_file="$TMP_DIR/dev"
-    local pkg mver dver status
+    local release="$1" main_file="$TMP_DIR/main" dev_file="$TMP_DIR/dev"
+    local shipped_file="$TMP_DIR/shipped" info_dir="$TMP_DIR/shipped-info"
+    local pkg mver dver sver status image="unavailable"
 
     fetch_channel "$MAIN_CHANNEL" > "$main_file"
     fetch_channel "$DEV_CHANNEL" > "$dev_file"
+    : > "$shipped_file"
 
-    printf 'package\tmain\tdev\tstatus\n'
+    if [ -z "$release" ]; then
+        release=$(gh release list --limit 1 --json tagName --jq '.[0].tagName' 2>/dev/null || true)
+    fi
+    if [ -n "$release" ] && download_release_info "$release" "$info_dir"; then
+        # shortcut: full is the promotion baseline; add per-image columns if lite-only finals become common.
+        info=$(find_image_file "$info_dir" full info)
+        image="full"
+        if [ -z "$info" ]; then
+            info=$(find_image_file "$info_dir" lite info)
+            image="lite"
+        fi
+        if [ -n "$info" ]; then
+            extract_packages "$info" > "$shipped_file"
+        else
+            image="unavailable"
+        fi
+    fi
+
+    printf '# wlanpi/%s vs wlanpi/%s, %s/%s %s, shipped=%s (%s), %s\n' \
+        "$MAIN_CHANNEL" "$DEV_CHANNEL" "$REPO" "$DIST" "$ARCH" \
+        "${release:-unavailable}" "$image" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    printf 'package\tmain\tdev\tshipped\tstatus\n'
 
     awk -F'\t' '
-        FNR == NR { main[$1] = $2; next }
-        { dev[$1] = $2 }
+        FILENAME == ARGV[1] { main[$1] = $2; next }
+        FILENAME == ARGV[2] { dev[$1] = $2; next }
+        { shipped[$1] = $2 }
         END {
             for (p in main) seen[p] = 1
             for (p in dev) seen[p] = 1
-            for (p in seen) printf "%s|%s|%s\n", p, (p in main ? main[p] : ""), (p in dev ? dev[p] : "")
+            for (p in seen) printf "%s|%s|%s|%s\n", p, main[p], dev[p], shipped[p]
         }
-    ' "$main_file" "$dev_file" | LC_ALL=C sort -t'|' -k1,1 | while IFS='|' read -r pkg mver dver; do
-        if [ -z "$mver" ]; then
-            status="dev-only"
-        elif [ -z "$dver" ]; then
-            status="main-only"
-        elif [ "$mver" = "$dver" ]; then
-            status="current"
-        elif version_gt "$dver" "$mver"; then
-            status="pending"
-        elif version_gt "$mver" "$dver"; then
-            status="main-newer"
-        else
-            status="differs"
+    ' "$main_file" "$dev_file" "$shipped_file" | LC_ALL=C sort -t'|' -k1,1 |
+    while IFS='|' read -r pkg mver dver sver; do
+        if [ -z "$mver" ]; then status="dev-only"
+        elif [ -z "$dver" ]; then status="main-only"
+        elif [ "$mver" = "$dver" ]; then status="current"
+        elif version_gt "$dver" "$mver"; then status="pending"
+        elif version_gt "$mver" "$dver"; then status="main-newer"
+        else status="differs"
         fi
-        printf '%s\t%s\t%s\t%s\n' "$pkg" "${mver:--}" "${dver:--}" "$status"
+        printf '%s\t%s\t%s\t%s\t%s\n' "$pkg" "${mver:--}" "${dver:--}" "${sver:--}" "$status"
     done
 }
 
 show_report() {
-    local release="$1"
-    local image="$2"
-    local dir="$TMP_DIR/show"
-    local img file
+    local release="$1" image="$2" dir="$TMP_DIR/show" img file context_file=""
 
-    mkdir -p "$dir"
-
-    if ! gh release view "$release" >/dev/null 2>&1; then
-        echo "release-info: release not found: $release" >&2
-        return 1
-    fi
-    if ! gh release download "$release" --pattern '*.info' --dir "$dir" >/dev/null 2>&1; then
+    if ! download_release_info "$release" "$dir"; then
         echo "release-info: no .info assets in release: $release" >&2
         return 1
     fi
-
+    context_file=$(find "$dir" -name '*.info' -print -quit)
+    release_context "$release" "$context_file"
     printf 'image\tpackage\tversion\n'
 
     for img in lite full; do
-        if [ "$image" != "both" ] && [ "$image" != "$img" ]; then
-            continue
-        fi
-        file=$(find "$dir" -name "*-$img.info" -print -quit)
+        [ "$image" = "both" ] || [ "$image" = "$img" ] || continue
+        file=$(find_image_file "$dir" "$img" info)
         if [ -z "$file" ]; then
-            echo "release-info: no $img image in release: $release" >&2
+            printf '# no %s .info in %s\n' "$img" "$release"
             continue
         fi
-        grep -E "^(ii|hi) " "$file" | awk -v image="$img" -F' +' '{name=$2; sub(/:.*/, "", name); print image "\t" name "\t" $3}'
+        extract_packages "$file" | awk -v image="$img" -F'\t' '{print image "\t" $0}'
     done
+}
+
+package_diff() {
+    local image="$1" before="$2" after="$3" union="$TMP_DIR/package-union"
+    local pkg old new status
+
+    awk -F'\t' '
+        FILENAME == ARGV[1] { old[$1]=$2; seen[$1]=1; next }
+        { new[$1]=$2; seen[$1]=1 }
+        END { for (p in seen) printf "%s|%s|%s\n", p, old[p], new[p] }
+    ' "$before" "$after" | LC_ALL=C sort > "$union"
+
+    while IFS='|' read -r pkg old new; do
+        if [ -z "$old" ]; then status="added"
+        elif [ -z "$new" ]; then status="removed"
+        elif [ "$old" = "$new" ]; then continue
+        elif version_gt "$new" "$old"; then status="upgraded"
+        elif version_gt "$old" "$new"; then status="downgraded"
+        else status="differs"
+        fi
+        printf 'package\t%s\t%s\t%s\t%s\t%s\t-\n' "$image" "$pkg" "${old:--}" "${new:--}" "$status"
+    done < "$union"
+}
+
+scan_vulnerabilities() {
+    local sbom="$1" output="$2" template="$TMP_DIR/grype.tmpl"
+    printf '{{range .Matches}}{{printf "%%s\\t%%s\\t%%s\\t%%s\\t%%s\\n" .Vulnerability.ID .Artifact.Name .Artifact.Version .Vulnerability.Severity .Artifact.Type}}{{end}}' > "$template"
+    xz -dc "$sbom" | grype -q -o template -t "$template" | LC_ALL=C sort -u > "$output"
+}
+
+vulnerability_diff() {
+    local image="$1" before="$2" after="$3"
+    awk -F'\t' -v image="$image" '
+        FILENAME == ARGV[1] { old[$1 SUBSEP $2 SUBSEP $5]=$3; oldsev[$1 SUBSEP $2 SUBSEP $5]=$4; next }
+        { new[$1 SUBSEP $2 SUBSEP $5]=$3; newsev[$1 SUBSEP $2 SUBSEP $5]=$4 }
+        END {
+            for (k in old) if (!(k in new)) {
+                split(k, p, SUBSEP)
+                printf "vuln\t%s\t%s\t%s@%s\t-\tresolved\t%s/%s\n", image, p[1], p[2], old[k], oldsev[k], p[3]
+            }
+            for (k in new) if (!(k in old)) {
+                split(k, p, SUBSEP)
+                printf "vuln\t%s\t%s\t-\t%s@%s\tintroduced\t%s/%s\n", image, p[1], p[2], new[k], newsev[k], p[3]
+            }
+        }
+    ' "$before" "$after" | LC_ALL=C sort
+}
+
+compare_report() {
+    local baseline="$1" release="$2" image="$3"
+    local before_dir="$TMP_DIR/before" after_dir="$TMP_DIR/after" img before after
+
+    download_release_info "$baseline" "$before_dir" || { echo "release-info: no .info assets in release: $baseline" >&2; return 1; }
+    download_release_info "$release" "$after_dir" || { echo "release-info: no .info assets in release: $release" >&2; return 1; }
+
+    printf '# %s -> %s\n' "$baseline" "$release"
+    printf 'kind\timage\tname\tbaseline\trelease\tstatus\tnote\n'
+    for img in lite full; do
+        [ "$image" = "both" ] || [ "$image" = "$img" ] || continue
+        before=$(find_image_file "$before_dir" "$img" info)
+        after=$(find_image_file "$after_dir" "$img" info)
+        if [ -z "$before" ] || [ -z "$after" ]; then
+            printf '# no comparable %s .info for %s -> %s\n' "$img" "$baseline" "$release"
+            continue
+        fi
+        extract_packages "$before" > "$TMP_DIR/$img-before.packages"
+        extract_packages "$after" > "$TMP_DIR/$img-after.packages"
+        package_diff "$img" "$TMP_DIR/$img-before.packages" "$TMP_DIR/$img-after.packages"
+    done
+
+    if ! command -v grype >/dev/null 2>&1; then
+        printf '# vulnerability comparison skipped: grype not installed\n'
+        return 0
+    fi
+    for img in lite full; do
+        [ "$image" = "both" ] || [ "$image" = "$img" ] || continue
+        mkdir -p "$TMP_DIR/$img-sbom-before" "$TMP_DIR/$img-sbom-after"
+        if ! gh release download "$baseline" --pattern "*-$img.sbom.xz" --dir "$TMP_DIR/$img-sbom-before" >/dev/null 2>&1 ||
+           ! gh release download "$release" --pattern "*-$img.sbom.xz" --dir "$TMP_DIR/$img-sbom-after" >/dev/null 2>&1; then
+            printf '# no comparable %s SBOM for %s -> %s\n' "$img" "$baseline" "$release"
+            continue
+        fi
+        before=$(find "$TMP_DIR/$img-sbom-before" -name '*.sbom.xz' -print -quit)
+        after=$(find "$TMP_DIR/$img-sbom-after" -name '*.sbom.xz' -print -quit)
+        scan_vulnerabilities "$before" "$TMP_DIR/$img-before.vulns"
+        scan_vulnerabilities "$after" "$TMP_DIR/$img-after.vulns"
+        vulnerability_diff "$img" "$TMP_DIR/$img-before.vulns" "$TMP_DIR/$img-after.vulns"
+    done
+}
+
+fetch_channel_index() {
+    local channel="$1"
+    local file="$TMP_DIR/$channel.Packages"
+    if [ ! -f "$file" ]; then
+        curl -fsSL "$(channel_url "$channel")" | gzip -dc > "$file"
+    fi
+    printf '%s\n' "$file"
+}
+
+package_filename() {
+    local package="$1" version="$2" index filename
+    for channel in "$MAIN_CHANNEL" "$DEV_CHANNEL"; do
+        index=$(fetch_channel_index "$channel")
+        filename=$(awk -v RS='' -v p="$package" -v v="$version" '
+            index($0, "Package: " p "\n") && index($0, "\nVersion: " v "\n") {
+                if (match($0, /(^|\n)Filename: [^\n]+/)) {
+                    value=substr($0, RSTART, RLENGTH); sub(/^\n/, "", value); sub(/^Filename: /, "", value); print value; exit
+                }
+            }
+        ' "$index")
+        if [ -n "$filename" ]; then
+            printf '%s\n' "$filename"
+            return
+        fi
+    done
+}
+
+changes_report() {
+    local rows="$TMP_DIR/change-rows" package old new status filename deb changelog
+    if ! command -v dpkg-parsechangelog >/dev/null 2>&1; then
+        printf '# package changelogs skipped: dpkg-dev not installed\n'
+        return 0
+    fi
+
+    awk -F'\t' '$1=="package" && ($6=="added" || $6=="upgraded") {print $3 "\t" $4 "\t" $5 "\t" $6}' |
+        LC_ALL=C sort -u > "$rows"
+    # shortcut: downloads are sequential; parallelize if comparisons regularly span dozens of WLAN Pi packages.
+    while IFS=$'\t' read -r package old new status; do
+        filename=$(package_filename "$package" "$new")
+        [ -n "$filename" ] || continue
+        deb="$TMP_DIR/${package}.deb"
+        curl -fsSL -o "$deb" "$PC_BASE/$DEV_CHANNEL/$REPO/$filename" 2>/dev/null ||
+            curl -fsSL -o "$deb" "$PC_BASE/$MAIN_CHANNEL/$REPO/$filename" 2>/dev/null || continue
+        changelog=$(dpkg-deb -c "$deb" | awk '{print $6}' | grep -E "/usr/share/doc/$package/changelog(\.Debian)?\.gz$" | head -n1 || true)
+        [ -n "$changelog" ] || continue
+        printf '### %s %s -> %s\n\n' "$package" "$old" "$new"
+        dpkg-deb --fsys-tarfile "$deb" | tar -xO "$changelog" | gzip -dc > "$TMP_DIR/changelog"
+        if [ "$status" = "added" ]; then
+            dpkg-parsechangelog -l"$TMP_DIR/changelog" --count 1 -S Changes 2>/dev/null || true
+        else
+            dpkg-parsechangelog -l"$TMP_DIR/changelog" --since "$old" -S Changes 2>/dev/null || true
+        fi
+        printf '\n'
+    done < "$rows"
+}
+
+parse_image() {
+    case "$1" in both|lite|full) ;; *) echo "release-info: --image must be both, lite, or full" >&2; exit 2 ;; esac
 }
 
 status_cmd() {
+    local release=""
     while [ $# -gt 0 ]; do
         case "$1" in
-            --repo) REPO="$2"; shift 2 ;;
-            --dist) DIST="$2"; shift 2 ;;
-            --arch) ARCH="$2"; shift 2 ;;
-            --main) MAIN_CHANNEL="$2"; shift 2 ;;
-            --dev) DEV_CHANNEL="$2"; shift 2 ;;
+            --release|--repo|--dist|--arch|--main|--dev)
+                [ $# -ge 2 ] || { echo "release-info: $1 requires a value" >&2; exit 2; }
+                case "$1" in
+                    --release) release="$2" ;;
+                    --repo) REPO="$2" ;;
+                    --dist) DIST="$2" ;;
+                    --arch) ARCH="$2" ;;
+                    --main) MAIN_CHANNEL="$2" ;;
+                    --dev) DEV_CHANNEL="$2" ;;
+                esac
+                shift 2
+                ;;
             *) echo "release-info: unknown option for status: $1" >&2; exit 2 ;;
         esac
     done
-    status_report
+    status_report "$release"
 }
 
 show_cmd() {
-    local release=""
-    local image="both"
-
+    local release="" image="both"
     while [ $# -gt 0 ]; do
         case "$1" in
-            --image) image="$2"; shift 2 ;;
+            --image) [ $# -ge 2 ] || { echo "release-info: --image requires a value" >&2; exit 2; }; image="$2"; shift 2 ;;
             --*) echo "release-info: unknown option for show: $1" >&2; exit 2 ;;
             *) release="$1"; shift ;;
         esac
     done
-
-    if [ -z "$release" ]; then
-        echo "release-info: show requires a release tag" >&2
-        exit 2
-    fi
-    case "$image" in
-        both | lite | full) ;;
-        *) echo "release-info: --image must be both, lite, or full" >&2; exit 2 ;;
-    esac
+    [ -n "$release" ] || { echo "release-info: show requires a release tag" >&2; exit 2; }
+    parse_image "$image"
     show_report "$release" "$image"
+}
+
+compare_cmd() {
+    local baseline="" release="" image="both"
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --image) [ $# -ge 2 ] || { echo "release-info: --image requires a value" >&2; exit 2; }; image="$2"; shift 2 ;;
+            --*) echo "release-info: unknown option for compare: $1" >&2; exit 2 ;;
+            *) if [ -z "$baseline" ]; then baseline="$1"; else release="$1"; fi; shift ;;
+        esac
+    done
+    [ -n "$baseline" ] && [ -n "$release" ] || { echo "release-info: compare requires baseline and release tags" >&2; exit 2; }
+    parse_image "$image"
+    compare_report "$baseline" "$release" "$image"
 }
 
 case "${1:-}" in
     status) shift; status_cmd "$@" ;;
     show) shift; show_cmd "$@" ;;
-    -h | --help) usage ;;
+    compare) shift; compare_cmd "$@" ;;
+    changes) shift; [ $# -eq 0 ] || { echo "release-info: changes reads compare TSV from stdin" >&2; exit 2; }; changes_report ;;
+    -h|--help) usage ;;
     *) usage >&2; exit 2 ;;
 esac
