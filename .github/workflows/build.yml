@@ -811,7 +811,9 @@ jobs:
           && (github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
               || github.event.inputs.force_release == 'true') }}
     permissions:
+      attestations: write
       contents: write
+      id-token: write
     steps:
       - name: Confirm release publishing ref
         run: |
@@ -839,6 +841,8 @@ jobs:
           find all-artifacts -name "*.sha256" -exec cp {} release-files/ \;
           find all-artifacts -name "*.info" -exec cp {} release-files/ \;
           find all-artifacts -name "*.sbom.xz" -exec cp {} release-files/ \;
+          (cd release-files && find . -maxdepth 1 -type f ! -name SHA256SUMS -printf '%P\0' | sort -z | xargs -0 sha256sum > ../SHA256SUMS)
+          mv SHA256SUMS release-files/
           
           echo "Release files prepared:"
           ls -la release-files/
@@ -894,6 +898,11 @@ jobs:
           fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Attest release assets
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: release-files/*
 
       - name: Create GitHub pre-release
         run: |

@@ -7,7 +7,7 @@ Tools to build WLAN Pi OS images, based on
 
 You do not need to build anything. Download ready-made images from
 [Releases](../../releases): choose the newest non-pre-release for stable
-use, and verify your download against the published `.sha256` file.
+use, and verify your download against the published `SHA256SUMS` file.
 
 ## Build images yourself
 
