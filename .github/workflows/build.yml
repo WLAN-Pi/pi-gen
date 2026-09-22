@@ -235,6 +235,9 @@ jobs:
     runs-on: ubuntu-24.04-arm
     needs:
       - build-prep
+    permissions:
+      contents: read
+      issues: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -475,12 +478,25 @@ jobs:
           echo "Package differences saved to package-diffs/package-differences.log"
 
       - name: Scan SBOMs for vulnerabilities
+        id: cve_scan
+        continue-on-error: true
         run: |
           for SBOM in processed/*.sbom.xz; do
             [ -f "$SBOM" ] || continue
             REPORT="${SBOM%.sbom.xz}.cve.txt"
             xz -dc "$SBOM" | grype -o table > "$REPORT"
           done
+
+      - name: Report vulnerability scan failure
+        if: steps.cve_scan.outcome == 'failure'
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue create \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "CVE scan failed for wlanpi-os-${{ env.version }} (run $GITHUB_RUN_ID)" \
+            --body "Grype failed in $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID. The build continued without complete CVE reports."
 
       - name: Upload full image
         if: ${{ github.event.inputs.skip_full_image != 'true' }}
