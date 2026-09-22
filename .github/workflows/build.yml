@@ -103,7 +103,7 @@ jobs:
             echo "Error: repo choice not detected"
             exit 1
           fi
-          echo "REPOS=$CHOICE" >> $GITHUB_ENV
+          echo "REPOS=$CHOICE" >> "$GITHUB_ENV"
 
       - name: Set pkg repos choice variable
         id: repos
@@ -111,10 +111,10 @@ jobs:
           echo "Repos choice: $REPOS"
           if [ "$REPOS" = "both" ]; then
             echo 'Setting INCLUDE_PACKAGECLOUD_DEV to 1'
-            echo 'INCLUDE_PACKAGECLOUD_DEV=1' >> $GITHUB_OUTPUT
+            echo 'INCLUDE_PACKAGECLOUD_DEV=1' >> "$GITHUB_OUTPUT"
           else
             echo 'Setting INCLUDE_PACKAGECLOUD_DEV to 0'
-            echo 'INCLUDE_PACKAGECLOUD_DEV=0' >> $GITHUB_OUTPUT
+            echo 'INCLUDE_PACKAGECLOUD_DEV=0' >> "$GITHUB_OUTPUT"
           fi
 
       - name: Set version variables
@@ -124,7 +124,7 @@ jobs:
           # Example: 25.07-dev.1-theanine
 
           CODENAME="${{ github.event.inputs.codename }}"
-          echo "codename=$CODENAME" >> $GITHUB_OUTPUT
+          echo "codename=$CODENAME" >> "$GITHUB_OUTPUT"
           if [ -n "${{ github.event.inputs.base_date }}" ]; then
             BASE_VERSION="${{ github.event.inputs.base_date }}"
             echo "Using specified base date: $BASE_VERSION"
@@ -208,9 +208,11 @@ jobs:
           echo "Version (with pre-release marker): $VERSION"
           echo "Full version (with codename): $FULL_VERSION"
 
-          echo "base_version=$BASE_VERSION" >> $GITHUB_OUTPUT
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "full_version=$FULL_VERSION" >> $GITHUB_OUTPUT
+          {
+            echo "base_version=$BASE_VERSION"
+            echo "version=$VERSION"
+            echo "full_version=$FULL_VERSION"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Upload job logs
         if: always()
@@ -225,7 +227,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: wlanpi-os-${{ needs.build-prep.outputs.full_version }}_build-prep-job-logs 
+          name: wlanpi-os-${{ steps.version.outputs.full_version }}_build-prep-job-logs 
           path: collected-logs/**/*.log
           if-no-files-found: ignore
 
@@ -312,7 +314,7 @@ jobs:
           find deploy -type f -exec ls -lh {} \; | sort
           echo "========================================"
 
-          if [ ! -f deploy/*.img.gz ]; then
+          if ! compgen -G 'deploy/*.img.gz' > /dev/null; then
             echo "::error::No images (img.gz) were detected during build"
             exit 1
           fi
@@ -330,7 +332,7 @@ jobs:
         id: vercheck
         run: |
           VERSION="${{ needs.build-prep.outputs.full_version }}"
-          echo "version=$VERSION" >> $GITHUB_ENV
+          echo "version=$VERSION" >> "$GITHUB_ENV"
           mkdir -p processed
           for IMG in deploy/*.img.gz; do
             if [ -f "$IMG" ]; then
@@ -430,11 +432,11 @@ jobs:
           fi
 
           echo "Checking deploy directory permissions before creating"
-          ls -la . | grep deploy || echo "No deploy directory found yet"
+          ls -ld deploy 2>/dev/null || echo "No deploy directory found yet"
 
           mkdir -p deploy
           echo "Created deploy directory, checking permissions:"
-          ls -la . | grep deploy
+          ls -ld deploy 2>/dev/null || true
           echo "User and groups:"
           id
 
@@ -507,11 +509,11 @@ jobs:
             echo "- Difference: $((FULL_COUNT - LITE_COUNT)) packages"
             echo
             echo "## Packages unique to full image ($FULL_UNIQUE_COUNT total)"
-            echo "$ONLY_IN_FULL" | sed 's/^/- /'
+            echo "$ONLY_IN_FULL" | awk '{print "- " $0}'
             echo
             echo "## Packages unique to lite image ($LITE_UNIQUE_COUNT total)"
             if [ "$LITE_UNIQUE_COUNT" -gt 0 ]; then
-              echo "$ONLY_IN_LITE" | sed 's/^/- /'
+              echo "$ONLY_IN_LITE" | awk '{print "- " $0}'
             else
               echo "None - all lite packages are included in full image"
             fi
@@ -600,7 +602,7 @@ jobs:
       - name: Create A/B partitioned lite image
         run: |
           echo "Current directory:"
-          echo "$(pwd)"
+          pwd
           echo
           echo "Directory listing for pwd:"
           ls -la
@@ -613,7 +615,6 @@ jobs:
           ls -la original-images || echo "Failed to list ./original-images directory ..."
           echo
 
-          VERSION="${{ needs.build-prep.outputs.full_version }}"
           AB_SUFFIX="AB_PARTITION"
           AB_ROOT_SIZE="${{ github.event.inputs.ab_root_size_mb }}"
           
@@ -677,7 +678,7 @@ jobs:
           sha256sum "$OUTPUT_BASE.gz" > "$OUTPUT_BASE.gz.sha256"
           popd
 
-          echo "output_base=$OUTPUT_BASE" >> $GITHUB_ENV
+          echo "output_base=$OUTPUT_BASE" >> "$GITHUB_ENV"
           
           rm -f "original.img"
 
@@ -830,7 +831,7 @@ jobs:
           VERSION="${{ needs.build-prep.outputs.full_version }}"
           GIT_TAG="$VERSION"
           echo "Using git tag: $GIT_TAG"
-          echo "git_tag=$GIT_TAG" >> $GITHUB_ENV
+          echo "git_tag=$GIT_TAG" >> "$GITHUB_ENV"
 
       - name: Set build type label for release title
         run: |
@@ -870,9 +871,9 @@ jobs:
             echo "::error::Failed to generate release notes ..."
             mkdir -p release-notes
             echo "Release notes generation failed. Please check the workflow logs for details." >> release-notes/release-notes.log
-            echo "used_fallback=true" >> $GITHUB_OUTPUT
+            echo "used_fallback=true" >> "$GITHUB_OUTPUT"
           else
-            echo "used_fallback=false" >> $GITHUB_OUTPUT
+            echo "used_fallback=false" >> "$GITHUB_OUTPUT"
           fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -949,7 +950,7 @@ jobs:
           for JOB_DIR in combined-logs/*; do
             if [ -d "$JOB_DIR" ]; then
               COUNT=$(find "$JOB_DIR" -type f | wc -l)
-              echo "$(basename $JOB_DIR): $COUNT log files" >> combined-logs/summary.txt
+              echo "$(basename "$JOB_DIR"): $COUNT log files" >> combined-logs/summary.txt
             else
               echo "Directory does not exist: $JOB_DIR"
             fi
