@@ -1,4 +1,5 @@
 ufw
+libnss-myhostname
 nftables
 #scandump
 tcpdump
