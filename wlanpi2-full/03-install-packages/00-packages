@@ -4,6 +4,7 @@ lsof
 wget
 avahi-daemon
 ufw
+libnss-myhostname
 nftables
 scandump
 tcpdump
