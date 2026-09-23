@@ -11,8 +11,11 @@ Read this first. [CI](docs/CI.md) covers the build pipeline,
 - The default branch is `trixie64`, the living builder for the current
   Debian release, continuing the `bullseye64` and `bookworm64` line. PRs
   target the default branch; there is no `main`.
-- One concern per PR. No mixed move-plus-change diffs. Soft cap ~400
-  changed lines.
+- One concern per PR. Size is a soft target: above 500 changed lines, add a
+  `Review order` section to the description; above 1,000 is fine when the
+  change is cohesive. Split only at real seams, never to hit a number. Put
+  moves and formatting in separate commits from behavioral changes. Full policy:
+  [developer guide](https://github.com/WLAN-Pi/developers/blob/main/CONTRIBUTING.md#pr-size-and-scope).
 - Upstream (`RPi-Distro/pi-gen`) changes are audited and cherry-picked.
   The trees have diverged (no `stage0-5` here), so never merge upstream
   wholesale.
