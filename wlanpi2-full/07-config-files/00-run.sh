@@ -88,6 +88,7 @@ echo "Debug: WLANPI_VERSION=\${WLANPI_VERSION}"
 
 echo "=== Setting WLAN Pi version information ==="
 echo "VERSION=${WLANPI_VERSION}" > /etc/wlanpi-release
+echo "CODENAME=${WLANPI_CODENAME}" >> /etc/wlanpi-release
 chmod 644 /etc/wlanpi-release 
 
 echo "=== /etc/os-release update complete ==="

@@ -18,7 +18,7 @@ DISABLE_FIRST_BOOT_USER_RENAME=1
 # For local builds, use date-based version if not set
 WLANPI_BASE_VERSION=${WLANPI_BASE_VERSION:-$(date '+%y.%m')}
 WLANPI_VERSION=${WLANPI_VERSION:-$(date '+%y.%m')}
-WLANPI_CODENAME=${WLANPI_CODENAME:-"Theanine"}
+WLANPI_CODENAME=${WLANPI_CODENAME:-"theanine"}
 WLANPI_FULL_VERSION=${WLANPI_FULL_VERSION:-"${WLANPI_VERSION}-${WLANPI_CODENAME}"}
 
 # Container-aware work directory configuration

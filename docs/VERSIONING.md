@@ -47,10 +47,12 @@ stable, latest release is manual. See [RELEASING.md](RELEASING.md).
 
 ## Traceability
 
-The image records the version without the codename in `/etc/wlanpi-release`:
+The image records the version and the codename on separate lines in
+`/etc/wlanpi-release`. `VERSION` never includes the codename:
 
 ```
 VERSION=26.08
+CODENAME=Cortado
 ```
 
 `scripts/common:update_issue` also writes a version string to
