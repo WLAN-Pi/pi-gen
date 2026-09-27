@@ -311,6 +311,7 @@ jobs:
             mkdir -p wlanpi1-lite
             touch wlanpi1-lite/SKIP
           fi
+          set -o pipefail
           sudo -E ./build.sh 2>&1 | tee build_output.log
 
           echo "========== BUILD OUTPUT FILES =========="
