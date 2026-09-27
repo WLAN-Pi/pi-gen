@@ -7,7 +7,7 @@
 # Usage: ./local-dev-ab-partition.sh
 # 
 # The script will:
-#   1. Find the most recent lite image in export-image/05-finalise/deploy/
+#   1. Find the most recent lite image in deploy/
 #   2. Decompress it
 #   3. Run scripts/ab-partition to create A/B layout
 #   4. Compress and checksum the result
@@ -18,7 +18,7 @@
 #
 set -e
 
-DEPLOY_DIR="./export-image/05-finalise/deploy"
+DEPLOY_DIR="./deploy"
 AB_SCRIPT="./scripts/ab-partition"
 AB_SUFFIX="AB_PARTITION"
 AB_ROOT_SIZE="${AB_ROOT_SIZE:-2500}"
@@ -33,7 +33,7 @@ if [ ! -x "$AB_SCRIPT" ]; then
 fi
 
 echo "Looking for lite image in $DEPLOY_DIR"
-LITE_IMG=$(find "$DEPLOY_DIR" -name "*lite*.img.gz" -print -quit)
+LITE_IMG=$(ls -t "$DEPLOY_DIR"/*-lite.img.gz 2>/dev/null | head -n1)
 
 if [ -z "$LITE_IMG" ]; then
     echo "Error: no lite image found in $DEPLOY_DIR"
