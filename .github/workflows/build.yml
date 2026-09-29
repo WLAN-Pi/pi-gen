@@ -784,8 +784,9 @@ jobs:
           find all-artifacts -name "*.sha256" -exec cp {} release-files/ \;
           find all-artifacts -name "*.info" -exec cp {} release-files/ \;
           find all-artifacts -name "*.sbom.xz" -exec cp {} release-files/ \;
-          (cd release-files && find . -maxdepth 1 -type f ! -name SHA256SUMS -printf '%P\0' | sort -z | xargs -0 sha256sum > ../SHA256SUMS)
-          mv SHA256SUMS release-files/
+          SUMS="wlanpi-os-${{ needs.build-prep.outputs.full_version }}-SHA256SUMS"
+          (cd release-files && find . -maxdepth 1 -type f ! -name "$SUMS" -printf '%P\0' | sort -z | xargs -0 sha256sum > "../$SUMS")
+          mv "$SUMS" release-files/
           
           echo "Release files prepared:"
           ls -la release-files/
