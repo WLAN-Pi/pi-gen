@@ -53,6 +53,16 @@ rm -f "${ROOTFS_DIR}"/usr/share/icons/*/icon-theme.cache
 
 rm -f "${ROOTFS_DIR}/var/lib/dbus/machine-id"
 
+# SSH host keys are per device. Remove them here, after the last package step
+# (any openssh-server configure creates them), for every image type, so no
+# published image carries keys that every device would share.
+rm -f "${ROOTFS_DIR}/etc/ssh/"ssh_host_*_key*
+
+# Regenerate the deleted host keys on any boot where they are missing, not
+# just ConditionFirstBoot (see comment in the drop-in)
+install -d "${ROOTFS_DIR}/etc/systemd/system/sshd-keygen.service.d"
+install -m 644 files/sshd-keygen-anyboot.conf "${ROOTFS_DIR}/etc/systemd/system/sshd-keygen.service.d/"
+
 # true > "${ROOTFS_DIR}/etc/machine-id"
 
 echo -n > "${ROOTFS_DIR}/etc/machine-id"
@@ -97,6 +107,12 @@ if hash syft 2>/dev/null; then
 		--source-name="${IMG_NAME}${IMG_SUFFIX}" \
 		--source-version="${WLANPI_FULL_VERSION}" \
 		-o spdx-json="${SBOM_FILE}"
+fi
+
+# Last check before the root filesystem is sealed: no image may ship host keys.
+if compgen -G "${ROOTFS_DIR}/etc/ssh/ssh_host_*_key*" > /dev/null; then
+	echo "ERROR: SSH host keys remain in ${ROOTFS_DIR}/etc/ssh" >&2
+	exit 1
 fi
 
 ROOT_DEV="$(awk "\$2 == \"${ROOTFS_DIR}\" {print \$1}" /etc/mtab)"
