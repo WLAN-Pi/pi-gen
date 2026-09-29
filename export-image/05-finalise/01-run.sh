@@ -109,6 +109,12 @@ if hash syft 2>/dev/null; then
 		-o spdx-json="${SBOM_FILE}"
 fi
 
+# Last check before the root filesystem is sealed: no image may ship host keys.
+if compgen -G "${ROOTFS_DIR}/etc/ssh/ssh_host_*_key*" > /dev/null; then
+	echo "ERROR: SSH host keys remain in ${ROOTFS_DIR}/etc/ssh" >&2
+	exit 1
+fi
+
 ROOT_DEV="$(awk "\$2 == \"${ROOTFS_DIR}\" {print \$1}" /etc/mtab)"
 
 unmount "${ROOTFS_DIR}"
