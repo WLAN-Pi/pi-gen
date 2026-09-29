@@ -99,8 +99,8 @@ A successful run on the default branch creates:
 - A git tag equal to the full version, for example `26.08-Cortado`.
 - A GitHub pre-release titled `v26.08-Cortado`. When `skip_full_image=true`,
   the title ends with `[LITE ONLY]`.
-- Assets: `*.img.gz`, `*.sha256`, `*.info`, `*.sbom.xz`, and `SHA256SUMS`.
-  GitHub build provenance attestations cover every asset.
+- Assets: `*.img.gz`, `*.sha256`, `*.info`, `*.sbom.xz`, and
+  `wlanpi-os-26.08-Cortado-SHA256SUMS`. GitHub build provenance attestations cover every asset.
 - Generated release notes.
 
 Verify the release:
@@ -110,12 +110,13 @@ gh release view 26.08-Cortado
 mkdir 26.08-Cortado
 gh release download 26.08-Cortado --dir 26.08-Cortado
 cd 26.08-Cortado
-gh attestation verify SHA256SUMS --repo WLAN-Pi/pi-gen
-sha256sum --check SHA256SUMS
+gh attestation verify wlanpi-os-26.08-Cortado-SHA256SUMS --repo WLAN-Pi/pi-gen
+sha256sum --check wlanpi-os-26.08-Cortado-SHA256SUMS
 ```
 
 Expected output shows the pre-release marker and uploaded assets, a verified
-attestation for `SHA256SUMS`, and `OK` for every asset listed in it.
+attestation for the checksum file, and `OK` for every asset listed in it.
+Releases up to `26.10-rc.2-DeadEye` name the checksum file `SHA256SUMS`.
 
 ## Check release information
 
