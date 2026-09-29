@@ -53,13 +53,6 @@ on_chroot << EOF
 usermod --pass='*' root
 EOF
 
-rm -f "${ROOTFS_DIR}/etc/ssh/"ssh_host_*_key*
-
-# Regenerate the deleted host keys on any boot where they are missing, not
-# just ConditionFirstBoot (see comment in the drop-in)
-install -d "${ROOTFS_DIR}/etc/systemd/system/sshd-keygen.service.d"
-install -m 644 files/sshd-keygen-anyboot.conf "${ROOTFS_DIR}/etc/systemd/system/sshd-keygen.service.d/"
-
 # Headless by default: no boot splash. wlanpi-gui enable unmasks these.
 on_chroot << EOF
 systemctl mask plymouth-start.service systemd-ask-password-plymouth.path || true
