@@ -114,6 +114,14 @@ gh attestation verify wlanpi-os-26.08-Cortado-SHA256SUMS --repo WLAN-Pi/pi-gen
 sha256sum --check wlanpi-os-26.08-Cortado-SHA256SUMS
 ```
 
+On macOS, replace the last command with:
+
+```bash
+shasum -a 256 --check wlanpi-os-26.08-Cortado-SHA256SUMS
+```
+
+If you downloaded only some assets, add `--ignore-missing` to either command.
+
 Expected output shows the pre-release marker and uploaded assets, a verified
 attestation for the checksum file, and `OK` for every asset listed in it.
 Releases up to `26.10-rc.2-DeadEye` name the checksum file `SHA256SUMS`.
