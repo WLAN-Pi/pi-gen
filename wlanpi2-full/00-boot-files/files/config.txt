@@ -44,6 +44,8 @@ dtparam=act_led_trigger=heartbeat
 
 [pi4]
 kernel=wlanpi-kernel8.img
+# Onboard Wi-Fi has no monitor mode. Comment out to keep it on.
+dtoverlay=disable-wifi
 
 [cm4]
 otg_mode=1

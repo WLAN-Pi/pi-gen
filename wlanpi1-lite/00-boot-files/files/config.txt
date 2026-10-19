@@ -43,6 +43,10 @@ arm_boost=1
 # Enable heartbeat
 dtparam=act_led_trigger=heartbeat
 
+[pi4]
+# Onboard Wi-Fi has no monitor mode. Comment out to keep it on.
+dtoverlay=disable-wifi
+
 [cm4]
 dtoverlay=max3421-hcd
 gpio=27=op,dh
