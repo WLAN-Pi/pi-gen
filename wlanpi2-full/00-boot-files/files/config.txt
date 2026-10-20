@@ -69,3 +69,7 @@ dtoverlay=dwc2,dr_mode=host
 kernel=wlanpi-kernel_2712.img
 
 [all]
+# Front-panel backlight (GPIO24 on ST7735 boards) off from firmware start,
+# so the panel is dark instead of white until wlanpi-fpms draws on it. On the Pro,
+# GPIO24 is the OLED data/command line, which fpms sets up itself.
+gpio=24=op,dl
