@@ -850,12 +850,19 @@ jobs:
 
       - name: Create GitHub pre-release
         run: |
+          # Without a start tag, GitHub skips releases on the same commit and lists PRs that already shipped.
+          NOTES_START=()
+          PREV_RELEASE=$(gh release list --exclude-drafts --exclude-pre-releases --limit 1 --json tagName --jq '.[0].tagName')
+          if [ -n "$PREV_RELEASE" ]; then
+            NOTES_START=(--notes-start-tag "$PREV_RELEASE")
+          fi
           gh release create ${{ env.git_tag }} \
             --target ${{ github.sha }} \
             --prerelease \
             --title "v${{ needs.build-prep.outputs.full_version }} ${{ env.BUILD_TYPE_LABEL }}" \
             --notes-file ./release-notes/release-notes.log \
             --generate-notes \
+            "${NOTES_START[@]}" \
             release-files/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
