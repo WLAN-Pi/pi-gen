@@ -103,6 +103,15 @@ EOF
 
 rm -f "${ROOTFS_DIR}/tmp/update-wlanpi-release.sh"
 
+# Dev and rc images keep the journal across reboots so lab crashes leave evidence.
+# raspberrypi-sys-mods ships 40-rpi-volatile-storage.conf; 50- sorts after it and wins.
+case "${WLANPI_VERSION}" in
+*-dev.* | *-rc.*)
+	mkdir -p "${ROOTFS_DIR}/etc/systemd/journald.conf.d"
+	printf '[Journal]\nStorage=persistent\nSystemMaxUse=256M\n' >"${ROOTFS_DIR}/etc/systemd/journald.conf.d/50-wlanpi-persistent.conf"
+	;;
+esac
+
 # Setup TFTP
 copy_overlay /etc/default/tftpd-hpa -o root -g root -m 644
 

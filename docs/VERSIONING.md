@@ -18,6 +18,10 @@ Format: `YY.MM[.point][-type.sequence]-CODENAME`
 | `final` | `YY.MM-CODENAME` | Stable release. |
 | `point` | `YY.MM.N-CODENAME` | Patch release for an existing month. |
 
+Dev and rc images keep the systemd journal in `/var/log/journal` across
+reboots, capped at 256 MB. Final and point images keep it in RAM, as Raspberry
+Pi OS does, so it is lost at each reboot.
+
 The sequence number `N` increments from the existing git tags for the same
 base and type. A point release takes its base from the `point_base` input and
 increments from the existing tags under that base. See [CI.md](CI.md) for how
