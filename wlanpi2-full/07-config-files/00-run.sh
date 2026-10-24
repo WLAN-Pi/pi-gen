@@ -66,9 +66,6 @@ on_chroot <<CHEOF
 	# Prevent interfaces from being managed by dhcpcd which conflicts with systemd
 	echo "denyinterfaces usb* pan*" | tee -a /etc/dhcpcd.conf
 
-	# Configure arp_ignore: network/arp
-	echo "net.ipv4.conf.eth0.arp_ignore = 1" >> /etc/sysctl.conf
-
 	# Fetch current version of the pci. ids file
 	update-pciids
 
@@ -77,9 +74,6 @@ on_chroot <<CHEOF
 	dpkg -i /tmp/wireless-regdb.deb
 	rm -f /tmp/wireless-regdb.deb
 	update-alternatives --set regulatory.db /lib/firmware/regulatory.db-upstream
-
-	# Automatically reboot after 1 second if a kernel panic occurs
-	echo "kernel.panic = 1" >> /etc/sysctl.conf
 CHEOF
 
 cat > "${ROOTFS_DIR}/tmp/update-wlanpi-release.sh" << EOF
