@@ -1,7 +1,7 @@
 ufw
 libnss-myhostname
 nftables
-#scandump
+scandump
 tcpdump
 traceroute
 mtr-tiny
