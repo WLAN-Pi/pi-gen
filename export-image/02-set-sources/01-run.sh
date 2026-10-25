@@ -7,3 +7,5 @@ apt-get update
 apt-get -y dist-upgrade --auto-remove --purge
 apt-get clean
 EOF
+# The update above exists so dist-upgrade sees current indexes. Do not ship them.
+find "${ROOTFS_DIR}/var/lib/apt/lists/" -type f -delete
