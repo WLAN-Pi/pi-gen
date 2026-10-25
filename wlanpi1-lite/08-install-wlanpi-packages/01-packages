@@ -1,7 +1,7 @@
 wlanpi-bluetooth
 wlanpi-common
 wlanpi-core
-#wlanpi-hwtest (not in packagecloud repo)
+#wlanpi-hwtest (not compatible with the WLAN Pi Go and must not be enabled in the lite stage)
 wlanpi-librespeed-cli
 wlanpi-misc-firmware
 wlanpi-profiler
