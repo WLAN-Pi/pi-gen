@@ -39,9 +39,6 @@ on_chroot <<CHEOF
 	# Change default systemd boot target from graphical.target to multi-user.target
 	systemctl set-default multi-user.target
 
-	# Configure arp_ignore: network/arp
-	echo "net.ipv4.conf.eth0.arp_ignore = 1" >> /etc/sysctl.conf
-
 	# Fetch current version of the pci. ids file
 	update-pciids
 
@@ -50,9 +47,6 @@ on_chroot <<CHEOF
 	dpkg -i /tmp/wireless-regdb.deb
 	rm -f /tmp/wireless-regdb.deb
 	update-alternatives --set regulatory.db /lib/firmware/regulatory.db-upstream
-
-	# Automatically reboot after 5 seconds if a kernel panic occurs
-	echo "kernel.panic = 5" >> /etc/sysctl.conf
 CHEOF
 
 cat > "${ROOTFS_DIR}/tmp/update-wlanpi-release.sh" << EOF
