@@ -1,0 +1,8 @@
+path-exclude=/lib/firmware/iwlwifi-*
+path-include=/lib/firmware/iwlwifi-gl-c0-fm-c0-*
+path-include=/lib/firmware/iwlwifi-gl-c0-fm-c0.pnvm
+path-exclude=/usr/lib/firmware/iwlwifi-*
+path-include=/usr/lib/firmware/iwlwifi-gl-c0-fm-c0-*
+path-include=/usr/lib/firmware/iwlwifi-gl-c0-fm-c0.pnvm
+path-exclude=/lib/firmware/intel/ibt-*
+path-exclude=/usr/lib/firmware/intel/ibt-*
