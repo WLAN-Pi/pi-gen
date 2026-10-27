@@ -1,4 +1,3 @@
-wlanpi-bluetooth
 wlanpi-common
 wlanpi-core
 #wlanpi-hwtest (not compatible with the WLAN Pi Go and must not be enabled in the lite stage)
