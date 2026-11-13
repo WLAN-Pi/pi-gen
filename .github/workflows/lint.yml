@@ -54,7 +54,7 @@ jobs:
         uses: raven-actions/actionlint@3d39aea434753780c3b3d4a1a31c854b4dbf49d7 # v2.2.0
 
   discord-workflow-status:
-    if: ${{ always() && github.repository_owner == 'WLAN-Pi' && ! github.event.pull_request.head.repo.fork && github.actor != 'dependabot[bot]' }}
+    if: ${{ always() && github.repository_owner == 'WLAN-Pi' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && github.actor != 'dependabot[bot]' }}
     name: Post Workflow Status to Discord
     needs:
       - shellcheck
