@@ -62,6 +62,8 @@ rm -f "${ROOTFS_DIR}/etc/ssh/"ssh_host_*_key*
 install -d "${ROOTFS_DIR}/etc/systemd/system/sshd-keygen.service.d"
 install -m 644 files/sshd-keygen-anyboot.conf "${ROOTFS_DIR}/etc/systemd/system/sshd-keygen.service.d/"
 
+install -D -m 644 files/50-wlanpi-save-interval.conf "${ROOTFS_DIR}/etc/systemd/timesyncd.conf.d/50-wlanpi-save-interval.conf"
+
 # true > "${ROOTFS_DIR}/etc/machine-id"
 
 echo -n > "${ROOTFS_DIR}/etc/machine-id"
