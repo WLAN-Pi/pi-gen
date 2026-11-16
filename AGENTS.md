@@ -58,7 +58,8 @@ Reuse first, write second:
 - Be terse. Prefer `grep` and targeted reads over dumping whole files.
   Run the real gates once, not ad-hoc exploratory commands.
 - Stop and ask the human before restructuring a stage, adding a new
-  workflow, or when scope is ambiguous.
+  workflow, or when the request could mean two changes with different
+  results in the image.
 
 ## Verify before committing
 
