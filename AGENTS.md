@@ -59,7 +59,7 @@ Reuse first, write second:
   Run the real gates once, not ad-hoc exploratory commands.
 - Stop and ask the human before restructuring a stage, adding a new
   workflow, or when the request could mean two changes with different
-  results in the image.
+  results in the image or a release.
 
 ## Verify before committing
 
