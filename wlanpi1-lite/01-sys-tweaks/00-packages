@@ -5,7 +5,6 @@ curl
 debconf-utils
 dphys-swapfile
 ethtool
-fake-hwclock
 file
 jq
 less

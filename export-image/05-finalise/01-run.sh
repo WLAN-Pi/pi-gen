@@ -7,9 +7,8 @@ BMAP_FILE="${STAGE_WORK_DIR}/${IMG_FILENAME}${IMG_SUFFIX}.bmap"
 
 on_chroot << EOF
 update-initramfs -k all -c
-if [ -x /etc/init.d/fake-hwclock ]; then
-	/etc/init.d/fake-hwclock stop
-fi
+install -m 755 -o systemd-timesync -g systemd-timesync -d /var/lib/systemd/timesync
+install -m 644 -o systemd-timesync -g systemd-timesync /dev/null /var/lib/systemd/timesync/clock
 if hash hardlink 2>/dev/null; then
 	hardlink -t /usr/share/doc
 fi
@@ -62,6 +61,8 @@ rm -f "${ROOTFS_DIR}/etc/ssh/"ssh_host_*_key*
 # just ConditionFirstBoot (see comment in the drop-in)
 install -d "${ROOTFS_DIR}/etc/systemd/system/sshd-keygen.service.d"
 install -m 644 files/sshd-keygen-anyboot.conf "${ROOTFS_DIR}/etc/systemd/system/sshd-keygen.service.d/"
+
+install -D -m 644 files/50-wlanpi-save-interval.conf "${ROOTFS_DIR}/etc/systemd/timesyncd.conf.d/50-wlanpi-save-interval.conf"
 
 # true > "${ROOTFS_DIR}/etc/machine-id"
 

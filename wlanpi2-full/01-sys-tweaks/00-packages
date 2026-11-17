@@ -8,7 +8,6 @@ debconf-utils
 dosfstools
 dphys-swapfile
 ed
-fake-hwclock
 fbset
 file
 gdb
